@@ -436,11 +436,14 @@
 	/* Boxes                                                               */
 	/* ------------------------------------------------------------------ */
 	var boxes = null;
+	var showEmpty = false;
+	try { showEmpty = localStorage.getItem('sps-show-empty-boxes') === '1'; } catch (e) { showEmpty = false; }
 	function loadBoxes() {
 		var grid = $('[data-boxes]');
 		return api('boxes').then(function (list) {
 			boxes = list;
-			count('boxes', list.length + ' ' + T.boxes.toLowerCase());
+			var used = list.filter(function (b) { return b.count > 0; }).length;
+			count('boxes', used + ' / ' + list.length + ' ' + T.boxes.toLowerCase());
 			var boxCard = function (b) {
 				return '<div class="box-card' + (b.count ? '' : ' empty') + '" data-box="' + b.id + '" role="button" tabindex="0">' +
 					(b.thumb ? '<div class="box-thumb"><img src="' + esc(b.thumb) + '" alt="" loading="lazy"></div>' : '') +
@@ -452,7 +455,16 @@
 					'</div>';
 			};
 			var lastTop = null;
-			grid.innerHTML = list.map(function (b) {
+			var emptyN = list.length - used;
+			var tg = $('[data-action="toggle-empty"]');
+			if (tg) {
+				tg.textContent = showEmpty ? T.hideEmpty : T.showEmpty.replace('%d', emptyN);
+				tg.classList.toggle('on', showEmpty);
+				tg.setAttribute('aria-pressed', showEmpty ? 'true' : 'false');
+				tg.hidden = !emptyN;
+			}
+			var visible = showEmpty ? list : list.filter(function (b) { return b.count > 0; });
+			grid.innerHTML = !visible.length ? '<p class="empty-note">' + esc(T.allEmpty) + '</p>' : visible.map(function (b) {
 				var top = String(b.path).split(' › ')[0];
 				var head = '';
 				if (top !== lastTop) { lastTop = top; head = '<h3 class="box-group">' + esc(top) + '</h3>'; }
@@ -462,6 +474,14 @@
 		}).catch(function (e) { grid.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
 	}
 	loaders.boxes = function () { loadBoxes(); if (typeof loadBoxStatus === 'function') { loadBoxStatus(); } };
+	var emptyToggle = $('[data-action="toggle-empty"]');
+	if (emptyToggle) {
+		emptyToggle.addEventListener('click', function () {
+			showEmpty = !showEmpty;
+			try { localStorage.setItem('sps-show-empty-boxes', showEmpty ? '1' : '0'); } catch (e) { /* ignore */ }
+			loadBoxes();
+		});
+	}
 	function boxById(id) { return (boxes || []).filter(function (b) { return String(b.id) === String(id); })[0]; }
 	$('[data-boxes]').addEventListener('click', function (e) {
 		var ed = e.target.closest('[data-box-edit]');

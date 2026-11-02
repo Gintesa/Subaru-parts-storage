@@ -171,7 +171,7 @@ class SPS_App {
 					echo self::section( 'cat', 'catalog', __( 'Subaru catalog', 'subaru-parts-inventory' ), self::catalog_body(), true );
 				}
 				$box_setup = $manager && current_user_can( SPS_CAP ) ? '<details class="box-setup"' . ( SPS_Boxes::duplicate_codes() || ! get_option( 'sps_boxes_cleaned' ) ? ' open' : '' ) . '><summary>⚙ ' . esc_html__( 'Box setup – clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</summary>' . SPS_Boxes::panel_html() . '</details>' : '';
-				echo self::section( 'boxes', 'box', __( 'Storage boxes', 'subaru-parts-inventory' ), $box_setup . '<p class="hint">' . esc_html__( 'Each box holds one Subaru catalog group. Tap a box to list what is inside.', 'subaru-parts-inventory' ) . '</p><div class="box-grid" data-boxes></div>', true );
+				echo self::section( 'boxes', 'box', __( 'Storage boxes', 'subaru-parts-inventory' ), $box_setup . '<p class="hint">' . esc_html__( 'Each box holds one Subaru catalog group. Tap a box to list what is inside.', 'subaru-parts-inventory' ) . '</p><div class="chips"><button type="button" class="chip" data-action="toggle-empty" aria-pressed="false"></button></div><div class="box-grid" data-boxes></div>', true );
 				if ( $manager ) {
 					echo self::section( 'labels', 'label', __( 'Labels to print', 'subaru-parts-inventory' ), self::labels_body(), true );
 					echo self::section( 'log', 'activity', __( 'Condition log & activity', 'subaru-parts-inventory' ), '<div class="log-list" data-activity></div>', true );
@@ -496,6 +496,9 @@ class SPS_App {
 			'of'           => __( 'of', 'subaru-parts-inventory' ),
 			'newLbl'       => __( 'New', 'subaru-parts-inventory' ),
 			'checklist'    => __( 'Checklist', 'subaru-parts-inventory' ),
+			'showEmpty'    => __( 'Show empty boxes (%d)', 'subaru-parts-inventory' ),
+			'hideEmpty'    => __( 'Hide empty boxes', 'subaru-parts-inventory' ),
+			'allEmpty'     => __( 'All boxes are empty – add parts or tap "Show empty boxes".', 'subaru-parts-inventory' ),
 			'notBoxed'     => __( 'Not boxed', 'subaru-parts-inventory' ),
 			'putAway'      => __( 'Put away', 'subaru-parts-inventory' ),
 			'markBoxed'    => __( 'Mark boxed in', 'subaru-parts-inventory' ),
