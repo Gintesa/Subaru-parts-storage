@@ -104,6 +104,14 @@ class SPS_App {
 			'removedFrom'  => (string) sps_setting( 'default_removed_from' ),
 			'fitments'     => $manager ? array_values( (array) get_terms( array( 'taxonomy' => SPS_TAX_FIT, 'hide_empty' => false, 'fields' => 'names' ) ) ) : array(),
 			'currency'     => (string) sps_setting( 'currency' ),
+			'shop'         => array(
+				'name'     => (string) sps_setting( 'shop_name' ),
+				'search'   => (string) sps_setting( 'shop_search_url' ),
+				'currency' => (string) sps_setting( 'shop_currency' ),
+				'rate'     => (float) sps_setting( 'shop_rate' ),
+				'prices'   => $manager ? (object) sps_shop_prices() : new stdClass(),
+				'factors'  => (array) sps_setting( 'value_factors' ),
+			),
 			'library'      => SPS_Library::loaded(),
 			'unit'         => (string) sps_setting( 'distance_unit' ),
 			'perPage'      => (int) $atts['per_page'] ? (int) $atts['per_page'] : (int) sps_setting( 'per_page' ),
@@ -272,6 +280,14 @@ class SPS_App {
 					<label class="field" for="sps-f-from"><?php esc_html_e( 'Removed from (private)', 'subaru-parts-inventory' ); ?></label>
 					<input type="text" id="sps-f-from" name="removed_from" placeholder="<?php esc_attr_e( 'Donor car / VIN', 'subaru-parts-inventory' ); ?>">
 				</div>
+				<div class="full shop-field">
+					<label class="field" for="sps-f-shop"><?php echo esc_html( sprintf( /* translators: 1: shop, 2: currency */ __( '%1$s price, %2$s (new)', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ), sps_setting( 'shop_currency' ) ) ); ?></label>
+					<div class="inline">
+						<input type="number" id="sps-f-shop" name="shop_price" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+						<a class="btn faint mini" data-shop-link target="_blank" rel="noopener" href="#">🔎 <?php echo esc_html( sprintf( /* translators: %s: shop */ __( 'Check on %s', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ) ) ); ?></a>
+					</div>
+					<div class="hint" data-shop-hint></div>
+				</div>
 				<div class="full">
 					<label class="field" for="sps-f-fit"><?php esc_html_e( 'Fits (comma separated)', 'subaru-parts-inventory' ); ?></label>
 					<input type="text" id="sps-f-fit" name="fitment" list="sps-fitments">
@@ -437,6 +453,11 @@ class SPS_App {
 			'valueEst'     => __( '~ estimated from list price', 'subaru-parts-inventory' ),
 			'valueNone'    => __( 'without price', 'subaru-parts-inventory' ),
 			'valueEach'    => __( 'Value', 'subaru-parts-inventory' ),
+			'shopPrice'    => __( 'Shop price', 'subaru-parts-inventory' ),
+			'fromShop'     => __( 'from %s', 'subaru-parts-inventory' ),
+			'remembered'   => __( 'remembered price from', 'subaru-parts-inventory' ),
+			'checkShop'    => __( 'Check on %s', 'subaru-parts-inventory' ),
+			'estValue'     => __( '≈ value', 'subaru-parts-inventory' ),
 			'valueOfList'  => __( '%d%% of list price', 'subaru-parts-inventory' ),
 			'unlabelled'   => __( 'No label', 'subaru-parts-inventory' ),
 			'noPhoto'      => __( 'no photo', 'subaru-parts-inventory' ),

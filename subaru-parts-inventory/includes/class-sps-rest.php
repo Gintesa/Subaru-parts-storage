@@ -609,6 +609,7 @@ class SPS_REST {
 					'value_fmt'  => sps_money( $s['value'] ),
 					'value_est'  => $s['value_est'],
 					'value_none' => $s['value_none'],
+					'value_shop' => $s['value_shop'],
 					'cost_fmt'   => sps_money( $s['cost'] ),
 					'unlabelled' => $s['unlabelled'],
 					'no_photo'   => $s['no_photo'],

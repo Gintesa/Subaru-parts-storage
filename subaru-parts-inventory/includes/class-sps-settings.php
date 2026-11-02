@@ -54,6 +54,10 @@ class SPS_Settings {
 			'show_quantity'       => empty( $in['show_quantity'] ) ? 0 : 1,
 			'show_location'       => empty( $in['show_location'] ) ? 0 : 1,
 			'remote_images'       => empty( $in['remote_images'] ) ? 0 : 1,
+			'shop_name'           => isset( $in['shop_name'] ) && '' !== trim( $in['shop_name'] ) ? sanitize_text_field( $in['shop_name'] ) : $def['shop_name'],
+			'shop_search_url'     => isset( $in['shop_search_url'] ) ? esc_url_raw( str_replace( '{pn}', 'SPSPN', $in['shop_search_url'] ) ) : $def['shop_search_url'],
+			'shop_currency'       => isset( $in['shop_currency'] ) && '' !== trim( $in['shop_currency'] ) ? sanitize_text_field( $in['shop_currency'] ) : $def['shop_currency'],
+			'shop_rate'           => isset( $in['shop_rate'] ) && (float) str_replace( ',', '.', $in['shop_rate'] ) > 0 ? round( (float) str_replace( ',', '.', $in['shop_rate'] ), 4 ) : $def['shop_rate'],
 			'usd_rate'            => isset( $in['usd_rate'] ) && (float) str_replace( ',', '.', $in['usd_rate'] ) > 0 ? round( (float) str_replace( ',', '.', $in['usd_rate'] ), 4 ) : $def['usd_rate'],
 			'value_factors'       => array_map(
 				static function ( $v ) {
@@ -65,6 +69,7 @@ class SPS_Settings {
 			'catalog_page_id'     => isset( $in['catalog_page_id'] ) ? absint( $in['catalog_page_id'] ) : 0,
 			'delete_on_uninstall' => empty( $in['delete_on_uninstall'] ) ? 0 : 1,
 		);
+		$out['shop_search_url'] = str_replace( 'SPSPN', '{pn}', $out['shop_search_url'] );
 		if ( '' === $out['sku_prefix'] ) {
 			$out['sku_prefix'] = $def['sku_prefix'];
 		}
@@ -110,7 +115,11 @@ class SPS_Settings {
 						<td><select name="<?php echo esc_attr( $n ); ?>[distance_unit]"><option value="km" <?php selected( $s['distance_unit'], 'km' ); ?>>km</option><option value="mi" <?php selected( $s['distance_unit'], 'mi' ); ?>>miles</option></select>
 						<label><?php esc_html_e( 'Currency', 'subaru-parts-inventory' ); ?> <input class="small-text" name="<?php echo esc_attr( $n ); ?>[currency]" value="<?php echo esc_attr( $s['currency'] ); ?>" /></label></td></tr>
 					<tr><th scope="row"><?php esc_html_e( 'Automatic value estimate', 'subaru-parts-inventory' ); ?></th>
-						<td><p class="description"><?php esc_html_e( 'Parts without your own "Estimated value" are valued from the parts.subaru.com list price (USD) × exchange rate × condition %.', 'subaru-parts-inventory' ); ?></p>
+						<td><p class="description"><?php esc_html_e( 'Parts without your own "Estimated value" are valued from (1) the shop price you entered, otherwise (2) the parts.subaru.com list price (USD) – converted with the rates below and multiplied by the condition %.', 'subaru-parts-inventory' ); ?></p>
+						<p><label><?php esc_html_e( 'Price shop', 'subaru-parts-inventory' ); ?> <input class="regular-text" style="max-width:160px" name="<?php echo esc_attr( $n ); ?>[shop_name]" value="<?php echo esc_attr( $s['shop_name'] ); ?>" /></label>
+						<label>1 <input class="small-text" name="<?php echo esc_attr( $n ); ?>[shop_currency]" value="<?php echo esc_attr( $s['shop_currency'] ); ?>" /> = <input type="number" step="0.0001" min="0" class="small-text" name="<?php echo esc_attr( $n ); ?>[shop_rate]" value="<?php echo esc_attr( $s['shop_rate'] ); ?>" /> <?php echo esc_html( $s['currency'] ); ?></label></p>
+						<p><label><?php esc_html_e( 'Shop search link', 'subaru-parts-inventory' ); ?><br><input class="large-text code" name="<?php echo esc_attr( $n ); ?>[shop_search_url]" value="<?php echo esc_attr( $s['shop_search_url'] ); ?>" /></label>
+						<span class="description"><?php esc_html_e( '{pn} is replaced by the part number. Default searches Google for the part on 4turbo.pl; if you search on 4turbo.pl itself, copy that address here and replace the number with {pn}.', 'subaru-parts-inventory' ); ?></span></p>
 						<p><label>1 USD = <input type="number" step="0.0001" min="0" class="small-text" name="<?php echo esc_attr( $n ); ?>[usd_rate]" value="<?php echo esc_attr( $s['usd_rate'] ); ?>" /> <?php echo esc_html( $s['currency'] ); ?></label></p>
 						<p><?php foreach ( sps_conditions() as $k => $c ) : ?>
 							<label style="margin-right:14px"><?php echo esc_html( $c['label'] ); ?> <input type="number" min="0" max="200" class="small-text" name="<?php echo esc_attr( $n ); ?>[value_factors][<?php echo esc_attr( $k ); ?>]" value="<?php echo esc_attr( (int) ( $s['value_factors'][ $k ] ?? 0 ) ); ?>" /> %</label>

@@ -342,7 +342,13 @@
 		if (M && d.removed_from) { kv.push([T.removedFrom, esc(d.removed_from)]); }
 		if (d.sale_price !== '' && d.sale_price != null) { kv.push([T.price, esc(money(d.sale_price))]); }
 		if (d.box && d.box.location) { kv.push([T.box, esc(d.box.location)]); }
-		if (M && d.value_fmt) { kv.push([T.valueEach, (d.value_source === 'estimate' ? '~' : '') + esc(d.value_fmt) + (d.quantity > 1 ? ' × ' + esc(d.quantity) : '') + (d.value_source === 'estimate' ? ' <span class="pmeta" style="display:inline">(' + esc(T.valueOfList.replace('%d', d.value_factor).replace('%%', '%')) + ')</span>' : '')]); }
+		if (M && d.value_fmt) {
+			var src = '';
+			if (d.value_source === 'estimate') { src = T.valueOfList.replace('%d', d.value_factor).replace('%%', '%'); }
+			if (d.value_source === 'shop' && d.shop) { src = d.value_factor + '% · ' + T.fromShop.replace('%s', C.shop.name) + ' ' + Number(d.shop.price).toFixed(2) + ' ' + C.shop.currency; }
+			kv.push([T.valueEach, (d.value_source !== 'manual' ? '~' : '') + esc(d.value_fmt) + (d.quantity > 1 ? ' × ' + esc(d.quantity) : '') + (src ? ' <span class="pmeta" style="display:inline">(' + esc(src) + ')</span>' : '')]);
+		}
+		if (M && d.shop_search) { kv.push([T.shopPrice, (d.shop ? esc(Number(d.shop.price).toFixed(2) + ' ' + C.shop.currency) + (d.shop.date ? ' <span class="pmeta" style="display:inline">· ' + esc(d.shop.date) + '</span>' : '') + ' · ' : '') + '<a href="' + esc(d.shop_search) + '" target="_blank" rel="noopener">🔎 ' + esc(T.checkShop.replace('%s', C.shop.name)) + '</a>']); }
 		if (d.catalog) {
 			if (d.catalog.aliases && d.catalog.aliases.replace(/\.$/, '') !== d.name) { kv.push([T.official, esc(d.catalog.aliases)]); }
 			if (d.catalog.notes) { kv.push(['ℹ', esc(d.catalog.notes)]); }
@@ -937,6 +943,7 @@
 		if (keepCat) { form.category_id.value = keepCat; }
 		syncPicks();
 		syncBox();
+		if (typeof syncShop === 'function') { syncShop(); }
 	}
 
 	function fillForm(d) {
@@ -947,7 +954,7 @@
 		$('[data-form-title]', form).textContent = T.editing + ': ' + (d.part_number || d.name) + ' · ' + d.sku;
 		$('[data-submit]', form).textContent = T.saveChanges;
 		['part_number', 'alt_numbers', 'epc_ref', 'condition_notes', 'mileage', 'removed_from', 'quantity', 'status', 'box_override', 'bin',
-			'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'private_notes'].forEach(function (k) { setField(k, d[k]); });
+			'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'shop_price', 'private_notes'].forEach(function (k) { setField(k, d[k]); });
 		setField('name', d.name);
 		setField('condition', d.condition);
 		setField('public', d['public']);
@@ -961,6 +968,7 @@
 		renderPhotos();
 		syncPicks();
 		syncBox();
+		syncShop();
 		if (d.alt_numbers || d.box_override || d.bin || d.purchase_price || d.value || d.sale_price || d.private_notes) { form.querySelector('details').open = true; }
 	}
 
@@ -1045,6 +1053,26 @@
 		}, 300);
 	}
 
+	function syncShop() {
+		if (!form || !C.shop) { return; }
+		var pn = form.part_number.value.replace(/[^a-z0-9]/gi, '').toUpperCase();
+		var link = $('[data-shop-link]', form);
+		if (link) {
+			link.href = pn && C.shop.search ? C.shop.search.replace('{pn}', encodeURIComponent(pn)) : '#';
+			link.classList.toggle('disabled', !pn);
+		}
+		var hint = $('[data-shop-hint]', form);
+		var known = pn && C.shop.prices ? C.shop.prices[pn] : null;
+		var price = parseFloat(String(form.shop_price.value).replace(',', '.'));
+		if (!(price > 0) && known && !form.part_id.value) { form.shop_price.placeholder = Number(known[0]).toFixed(2); }
+		var use = price > 0 ? price : (known ? Number(known[0]) : 0);
+		var c = form.querySelector('[name="condition"]:checked');
+		var f = c && C.shop.factors[c.value] != null ? C.shop.factors[c.value] : 50;
+		if (hint) {
+			hint.textContent = use > 0 ? (known && !(price > 0) ? T.remembered + ' ' + known[1] + ' · ' : '') + T.estValue + ' ' + money(use * (C.shop.rate || 1) * f / 100) + ' (' + f + '%)' : '';
+		}
+	}
+
 	var dupTimer;
 	function checkDup() {
 		clearTimeout(dupTimer);
@@ -1073,6 +1101,10 @@
 		form.box_override.addEventListener('input', syncBox);
 		form.part_number.addEventListener('input', checkDup);
 		form.part_number.addEventListener('input', identify);
+		form.part_number.addEventListener('input', syncShop);
+		form.shop_price.addEventListener('input', syncShop);
+		form.addEventListener('change', function (e) { if (e.target.name === 'condition') { syncShop(); } });
+		$('[data-shop-link]', form).addEventListener('click', function (e) { if (this.getAttribute('href') === '#') { e.preventDefault(); form.part_number.focus(); } });
 		form.name.addEventListener('input', function () { form.name.dataset.auto = ''; });
 		form.category_id.addEventListener('change', function () { form.dataset.catManual = '1'; });
 		form.addEventListener('click', function (e) {
@@ -1107,7 +1139,7 @@
 			var fd = new FormData(form);
 			var body = {};
 			['name', 'part_number', 'alt_numbers', 'epc_ref', 'category_id', 'condition_notes', 'mileage', 'removed_from', 'quantity', 'status', 'fitment',
-				'box_override', 'bin', 'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'weight', 'description', 'private_notes', 'note'].forEach(function (k) {
+				'box_override', 'bin', 'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'shop_price', 'weight', 'description', 'private_notes', 'note'].forEach(function (k) {
 				body[k] = fd.get(k) == null ? '' : String(fd.get(k)).trim();
 			});
 			body.condition = fd.get('condition') || 'used';
@@ -1143,6 +1175,7 @@
 				done.hidden = false;
 				done.querySelector('[data-done-open]').addEventListener('click', function () { fillForm(d); done.hidden = true; });
 				toast(T.saved + ' ' + d.sku);
+				if (C.shop && d.shop && d.part_number) { C.shop.prices[d.part_number.replace(/[^a-z0-9]/gi, '').toUpperCase()] = [d.shop.price, d.shop.date]; }
 				if (wasNew) {
 					resetForm(true);
 					form.part_number.focus();

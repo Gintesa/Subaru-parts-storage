@@ -55,7 +55,20 @@ Inside each parts.subaru.com category, the diagrams are grouped by Subaru **serv
 
 ## Inventory value
 
-The *Est. value* total counts every part you still have × quantity. A part's value is the **Estimated value** you entered on it. If that's empty, it is estimated automatically from the parts.subaru.com **list price (USD) × exchange rate × condition %**. The defaults are 1 USD = 0.92 € and new 80 %, used 50 %, bad 25 %, unusable 10 %; you can change all of them under *Settings → Automatic value estimate*. Estimated totals are shown with "~", and parts without any price are counted separately.
+The *Est. value* total counts every part you still have × quantity. Each part's value comes from the first of these that is set:
+
+1. **Your own value:** the *Estimated value* you typed on the part.
+2. **Shop price (4turbo.pl):** the *4turbo.pl price* in zł × exchange rate × condition %. Next to the field, **🔎 Check on 4turbo.pl** opens a search for the part number in your browser, so you can copy the price. A price is remembered per part number and reused for every part with that number. You can also bulk-import a price list (`part_number;price`) under *Import / Export*.
+3. **parts.subaru.com list price** (USD) × exchange rate × condition %.
+
+Settings → *Automatic value estimate* holds:
+- the shop name and search link (`{pn}` is replaced by the part number);
+- the exchange rates (default 1 zł = 0.23 €, 1 USD = 0.92 €);
+- the condition percentages (default new 80 %, used 50 %, bad 25 %, unusable 10 %).
+
+Estimated totals are shown with "~".
+
+4turbo.pl is protected by Cloudflare against automated access, so prices are not fetched automatically; you enter or import them.
 
 ## Part-number library (auto names & boxes)
 

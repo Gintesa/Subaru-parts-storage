@@ -145,6 +145,10 @@ function sps_default_settings() {
 		'default_removed_from' => 'JF1VA1L62H9817699',
 		'remote_images'     => 1,
 		'usd_rate'          => 0.92,
+		'shop_name'         => '4turbo.pl',
+		'shop_search_url'   => 'https://www.google.com/search?q=site%3A4turbo.pl+{pn}',
+		'shop_currency'     => 'zł',
+		'shop_rate'         => 0.23,
 		'value_factors'     => array( 'new' => 80, 'used' => 50, 'bad' => 25, 'unusable' => 10 ),
 		'distance_unit'     => 'km',
 		'currency'          => '€',
@@ -208,6 +212,7 @@ function sps_meta_fields() {
 		'value'          => 'money',
 		'sale_price'     => 'money',
 		'weight'         => 'decimal',
+		'shop_price'     => 'money',
 		'public'         => 'bool',
 		'private_notes'  => 'textarea',
 	);
@@ -274,11 +279,16 @@ function sps_meta( $post_id, $key, $default = '' ) {
  * @param array $data    key => raw value (only keys present are written).
  */
 function sps_save_part_meta( $post_id, array $data ) {
+	$old_shop = sps_meta( $post_id, 'shop_price' );
 	foreach ( sps_meta_fields() as $key => $type ) {
 		if ( ! array_key_exists( $key, $data ) ) {
 			continue;
 		}
 		update_post_meta( $post_id, '_sps_' . $key, sps_sanitize_field( $type, $data[ $key ] ) );
+	}
+	if ( array_key_exists( 'shop_price', $data ) && (string) $old_shop !== (string) sps_meta( $post_id, 'shop_price' ) ) {
+		update_post_meta( $post_id, '_sps_shop_price_date', current_time( 'Y-m-d' ) );
+		sps_set_shop_price( sps_meta( $post_id, 'part_number' ), sps_meta( $post_id, 'shop_price' ) );
 	}
 	sps_refresh_derived_meta( $post_id );
 }
@@ -619,6 +629,9 @@ function sps_part_data( $post_id, $context = 'public' ) {
 			'value_source'   => $pv['source'],
 			'value_factor'   => $pv['factor'],
 			'value_fmt'      => $pv['value'] ? sps_money( $pv['value'] ) : '',
+			'shop_price'     => sps_meta( $post_id, 'shop_price' ),
+			'shop'           => $pv['shop'] ? $pv['shop'] : sps_shop_price( $post_id ),
+			'shop_search'    => sps_shop_search_url( $data['part_number'] ),
 			'edit_url'       => get_edit_post_link( $post_id, 'raw' ),
 			'removed_from'   => (string) sps_meta( $post_id, 'removed_from' ),
 			'purchase_price' => sps_meta( $post_id, 'purchase_price' ),
@@ -900,8 +913,21 @@ function sps_run_upgrades( $from ) {
 function sps_part_value( $post_id ) {
 	$manual = sps_meta( $post_id, 'value' );
 	if ( '' !== $manual && null !== $manual && (float) $manual > 0 ) {
-		return array( 'value' => (float) $manual, 'source' => 'manual', 'msrp' => null, 'factor' => 100 );
+		return array( 'value' => (float) $manual, 'source' => 'manual', 'msrp' => null, 'shop' => null, 'factor' => 100 );
 	}
+	$factors = (array) sps_setting( 'value_factors' );
+	$cond    = (string) sps_meta( $post_id, 'condition', 'used' );
+	$factor  = isset( $factors[ $cond ] ) ? (int) $factors[ $cond ] : 50;
+
+	// 1st estimate: shop price (4turbo.pl) – on this part, or remembered for this part number.
+	$shop = sps_shop_price( $post_id );
+	if ( $shop ) {
+		$rate = (float) sps_setting( 'shop_rate' );
+		$rate = $rate > 0 ? $rate : 1;
+		return array( 'value' => round( $shop['price'] * $rate * $factor / 100, 2 ), 'source' => 'shop', 'msrp' => null, 'shop' => $shop, 'factor' => $factor );
+	}
+
+	// 2nd estimate: parts.subaru.com list price (USD).
 	$msrp = null;
 	if ( class_exists( 'SPS_Library' ) && SPS_Library::loaded() ) {
 		$row = SPS_Library::get( sps_meta( $post_id, 'part_number' ) );
@@ -910,12 +936,63 @@ function sps_part_value( $post_id ) {
 		}
 	}
 	if ( null === $msrp || $msrp <= 0 ) {
-		return array( 'value' => 0.0, 'source' => 'none', 'msrp' => null, 'factor' => 0 );
+		return array( 'value' => 0.0, 'source' => 'none', 'msrp' => null, 'shop' => null, 'factor' => 0 );
 	}
-	$factors = (array) sps_setting( 'value_factors' );
-	$cond    = (string) sps_meta( $post_id, 'condition', 'used' );
-	$factor  = isset( $factors[ $cond ] ) ? (int) $factors[ $cond ] : 50;
-	$rate    = (float) sps_setting( 'usd_rate' );
-	$rate    = $rate > 0 ? $rate : 1;
-	return array( 'value' => round( $msrp * $rate * $factor / 100, 2 ), 'source' => 'estimate', 'msrp' => $msrp, 'factor' => $factor );
+	$rate = (float) sps_setting( 'usd_rate' );
+	$rate = $rate > 0 ? $rate : 1;
+	return array( 'value' => round( $msrp * $rate * $factor / 100, 2 ), 'source' => 'estimate', 'msrp' => $msrp, 'shop' => null, 'factor' => $factor );
+}
+
+/**
+ * Shop prices remembered per part number: pn_norm => [ price, date ].
+ *
+ * @return array<string,array{0:float,1:string}>
+ */
+function sps_shop_prices() {
+	$all = get_option( 'sps_shop_prices', array() );
+	return is_array( $all ) ? $all : array();
+}
+
+/**
+ * Remember a shop price for a part number (used by every part with that number).
+ */
+function sps_set_shop_price( $number, $price, $date = '' ) {
+	$norm = sps_normalize_number( $number );
+	if ( '' === $norm ) {
+		return;
+	}
+	$all = sps_shop_prices();
+	if ( '' === $price || null === $price || (float) $price <= 0 ) {
+		unset( $all[ $norm ] );
+	} else {
+		$all[ $norm ] = array( round( (float) $price, 2 ), $date ? $date : current_time( 'Y-m-d' ) );
+	}
+	update_option( 'sps_shop_prices', $all, false );
+	sps_flush_caches();
+}
+
+/**
+ * Shop price for a part: its own field first, otherwise the remembered price for its number.
+ *
+ * @return array{price:float,date:string,url:string}|null
+ */
+function sps_shop_price( $post_id ) {
+	$pn  = (string) sps_meta( $post_id, 'part_number' );
+	$own = sps_meta( $post_id, 'shop_price' );
+	$all = sps_shop_prices();
+	$hit = null;
+	if ( '' !== $own && (float) $own > 0 ) {
+		$hit = array( (float) $own, (string) sps_meta( $post_id, 'shop_price_date' ) );
+	} elseif ( '' !== $pn && isset( $all[ sps_normalize_number( $pn ) ] ) ) {
+		$hit = $all[ sps_normalize_number( $pn ) ];
+	}
+	if ( ! $hit ) {
+		return null;
+	}
+	return array( 'price' => (float) $hit[0], 'date' => (string) $hit[1], 'url' => sps_shop_search_url( $pn ) );
+}
+
+function sps_shop_search_url( $number ) {
+	$tpl = (string) sps_setting( 'shop_search_url' );
+	return '' === $tpl || '' === (string) $number ? '' : str_replace( '{pn}', rawurlencode( sps_normalize_number( $number ) ), $tpl );
 }

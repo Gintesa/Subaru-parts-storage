@@ -235,6 +235,13 @@ class SPS_Admin {
 		/* translators: %s: currency */
 		self::field( $post->ID, 'sale_price', sprintf( __( 'Asking price (%s)', 'subaru-parts-inventory' ), $cur ), array( 'type' => 'number', 'attrs' => 'min="0" step="0.01"', 'help' => __( 'Shown publicly only if enabled in Settings.', 'subaru-parts-inventory' ) ) );
 		self::field( $post->ID, 'weight', __( 'Weight (kg)', 'subaru-parts-inventory' ), array( 'type' => 'number', 'attrs' => 'min="0" step="0.01"' ) );
+		/* translators: 1: shop, 2: currency */
+		self::field( $post->ID, 'shop_price', sprintf( __( '%1$s price (%2$s)', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ), sps_setting( 'shop_currency' ) ), array( 'type' => 'number', 'attrs' => 'min="0" step="0.01"', 'help' => __( 'New-part price in the shop. Used for the value estimate (× condition %). Remembered for this part number.', 'subaru-parts-inventory' ) ) );
+		$search = sps_shop_search_url( sps_meta( $post->ID, 'part_number' ) );
+		if ( $search ) {
+			/* translators: %s: shop */
+			echo '<p><a class="button" target="_blank" rel="noopener" href="' . esc_url( $search ) . '">🔎 ' . esc_html( sprintf( __( 'Check on %s', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ) ) ) . '</a></p>';
+		}
 		echo '</div>';
 		self::field( $post->ID, 'private_notes', __( 'Private notes', 'subaru-parts-inventory' ), array( 'type' => 'textarea', 'class' => 'sps-field--full' ) );
 	}
@@ -651,6 +658,7 @@ class SPS_Admin {
 			'value'        => 0.0,
 			'value_manual' => 0,
 			'value_est'    => 0,
+			'value_shop'   => 0,
 			'value_none'   => 0,
 			'cost'         => 0.0,
 			'by_group'     => array_fill_keys( array_keys( sps_conditions() ), 0 ),
@@ -675,7 +683,10 @@ class SPS_Admin {
 			$stats['items'] += $qty;
 			$pv              = sps_part_value( $id );
 			$stats['value'] += $pv['value'] * $qty;
-			$stats[ 'value_' . ( 'manual' === $pv['source'] ? 'manual' : ( 'estimate' === $pv['source'] ? 'est' : 'none' ) ) ]++;
+			$stats[ 'value_' . ( 'manual' === $pv['source'] ? 'manual' : ( 'none' === $pv['source'] ? 'none' : 'est' ) ) ]++;
+			if ( 'shop' === $pv['source'] ) {
+				$stats['value_shop']++;
+			}
 			$stats['cost']  += (float) sps_meta( $id, 'purchase_price', 0 ) * $qty;
 			if ( isset( $conditions[ $cond ] ) ) {
 				$stats['by_condition'][ $cond ]++;
@@ -723,7 +734,7 @@ class SPS_Admin {
 				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['items'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Total pieces', 'subaru-parts-inventory' ); ?></span></div>
 				<div class="sps-card sps-card--new"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['by_group']['new'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'New', 'subaru-parts-inventory' ); ?></span></div>
 				<div class="sps-card sps-card--used"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['parts'] - $s['by_group']['new'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Used / bad / unusable', 'subaru-parts-inventory' ); ?></span></div>
-				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( sps_money( $s['value'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Estimated value', 'subaru-parts-inventory' ); ?><?php if ( $s['value_est'] || $s['value_none'] ) : ?><br><small><?php echo esc_html( sprintf( /* translators: 1: estimated, 2: no price */ __( '~ %1$d from list price, %2$d without price', 'subaru-parts-inventory' ), $s['value_est'], $s['value_none'] ) ); ?></small><?php endif; ?></span></div>
+				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( sps_money( $s['value'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Estimated value', 'subaru-parts-inventory' ); ?><?php if ( $s['value_est'] || $s['value_none'] ) : ?><br><small><?php echo esc_html( sprintf( /* translators: 1: estimated, 2: no price */ __( '~ %1$d estimated (%3$d from shop price), %2$d without price', 'subaru-parts-inventory' ), $s['value_est'], $s['value_none'], $s['value_shop'] ) ); ?></small><?php endif; ?></span></div>
 				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( sps_money( $s['cost'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Purchase cost', 'subaru-parts-inventory' ); ?></span></div>
 			</div>
 

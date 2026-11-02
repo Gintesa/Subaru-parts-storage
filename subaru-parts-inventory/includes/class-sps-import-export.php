@@ -14,6 +14,7 @@ class SPS_Import_Export {
 		add_action( 'admin_post_sps_export', array( __CLASS__, 'export' ) );
 		add_action( 'admin_post_sps_template', array( __CLASS__, 'template' ) );
 		add_action( 'admin_post_sps_import', array( __CLASS__, 'import' ) );
+		add_action( 'admin_post_sps_shop_prices', array( __CLASS__, 'import_shop_prices' ) );
 	}
 
 	/**
@@ -45,6 +46,7 @@ class SPS_Import_Export {
 			'source',
 			'value',
 			'sale_price',
+			'shop_price',
 			'weight',
 			'public',
 			'private_notes',
@@ -106,6 +108,16 @@ class SPS_Import_Export {
 						<button class="button button-primary"><?php esc_html_e( 'Import CSV', 'subaru-parts-inventory' ); ?></button>
 					</form>
 				</div>
+			</div>
+			<div class="sps-panel" style="margin-top:16px">
+				<h2><?php echo esc_html( sprintf( /* translators: %s: shop */ __( '%s price list', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ) ) ); ?></h2>
+				<p><?php echo esc_html( sprintf( /* translators: 1: count, 2: currency */ __( '%1$d part numbers have a shop price. Prices are in %2$s and are used for the value estimate (× condition %%).', 'subaru-parts-inventory' ), count( sps_shop_prices() ), sps_setting( 'shop_currency' ) ) ); ?></p>
+				<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="sps_shop_prices" />
+					<?php wp_nonce_field( 'sps_shop_prices' ); ?>
+					<p><input type="file" name="prices" accept=".csv,.txt,text/csv" required /> <button class="button"><?php esc_html_e( 'Import prices', 'subaru-parts-inventory' ); ?></button></p>
+					<p class="description"><?php esc_html_e( 'CSV with part number and price (e.g. "16546AA10A;129,99"). Comma, semicolon or tab separated; decimal comma is fine; a header row is optional.', 'subaru-parts-inventory' ); ?></p>
+				</form>
 			</div>
 			<?php SPS_Library::panel(); ?>
 			<?php SPS_Catalog::panel(); ?>
@@ -169,6 +181,42 @@ class SPS_Import_Export {
 			fputcsv( $out, self::csv_safe( $row ) );
 		}
 		fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		exit;
+	}
+
+	public static function import_shop_prices() {
+		check_admin_referer( 'sps_shop_prices' );
+		if ( ! current_user_can( SPS_CAP ) ) {
+			wp_die( esc_html__( 'Not allowed.', 'subaru-parts-inventory' ) );
+		}
+		$n   = 0;
+		$tmp = isset( $_FILES['prices']['tmp_name'] ) ? $_FILES['prices']['tmp_name'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+		if ( $tmp && is_uploaded_file( $tmp ) ) {
+			$fh    = fopen( $tmp, 'r' ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+			$first = (string) fgets( $fh );
+			rewind( $fh );
+			$counts = array( "\t" => substr_count( $first, "\t" ), ';' => substr_count( $first, ';' ), ',' => substr_count( $first, ',' ) );
+			arsort( $counts );
+			$delim = key( $counts );
+			$all   = sps_shop_prices();
+			while ( ( $row = fgetcsv( $fh, 0, $delim ) ) !== false ) {
+				if ( count( $row ) < 2 ) {
+					continue;
+				}
+				$pn    = sps_normalize_number( preg_replace( '/^\xEF\xBB\xBF/', '', (string) $row[0] ) );
+				$price = (float) str_replace( array( ' ', ',' ), array( '', '.' ), preg_replace( '/[^0-9,.\s]/', '', (string) $row[1] ) );
+				if ( strlen( $pn ) < 4 || $price <= 0 ) {
+					continue;
+				}
+				$all[ $pn ] = array( round( $price, 2 ), current_time( 'Y-m-d' ) );
+				$n++;
+			}
+			fclose( $fh ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+			update_option( 'sps_shop_prices', $all, false );
+			sps_flush_caches();
+		}
+		/* translators: %d: count */
+		wp_safe_redirect( admin_url( 'edit.php?post_type=' . SPS_PT . '&page=sps-import-export&sps_msg=' . rawurlencode( sprintf( __( '%d shop prices imported.', 'subaru-parts-inventory' ), $n ) ) ) );
 		exit;
 	}
 

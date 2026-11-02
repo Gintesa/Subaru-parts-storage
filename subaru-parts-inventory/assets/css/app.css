@@ -424,3 +424,6 @@ html.sps-lb-open { overflow: hidden; }
 
 #sps-app .box-group { grid-column: 1 / -1; margin: 14px 0 0; font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--silver-dim); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
 #sps-app .box-group:first-child { margin-top: 0; }
+
+#sps-app .shop-field .inline input { max-width: 160px; }
+#sps-app a.btn.disabled { opacity: .45; pointer-events: none; }
