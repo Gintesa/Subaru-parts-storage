@@ -112,6 +112,13 @@ class SPS_App {
 				'prices'   => $manager ? (object) sps_shop_prices() : new stdClass(),
 				'factors'  => (array) sps_setting( 'value_factors' ),
 			),
+			'used'         => array(
+				'name'     => (string) sps_setting( 'used_name' ),
+				'search'   => (string) sps_setting( 'used_search_url' ),
+				'currency' => (string) sps_setting( 'used_currency' ),
+				'rate'     => (float) sps_setting( 'used_rate' ),
+				'prices'   => $manager ? (object) sps_shop_prices( 'used' ) : new stdClass(),
+			),
 			'library'      => SPS_Library::loaded(),
 			'unit'         => (string) sps_setting( 'distance_unit' ),
 			'perPage'      => (int) $atts['per_page'] ? (int) $atts['per_page'] : (int) sps_setting( 'per_page' ),
@@ -279,6 +286,14 @@ class SPS_App {
 				<div class="used-only">
 					<label class="field" for="sps-f-from"><?php esc_html_e( 'Removed from (private)', 'subaru-parts-inventory' ); ?></label>
 					<input type="text" id="sps-f-from" name="removed_from" placeholder="<?php esc_attr_e( 'Donor car / VIN', 'subaru-parts-inventory' ); ?>">
+				</div>
+				<div class="full shop-field used-only">
+					<label class="field" for="sps-f-used"><?php echo esc_html( sprintf( /* translators: 1: site, 2: currency */ __( '%1$s price, %2$s (used)', 'subaru-parts-inventory' ), sps_setting( 'used_name' ), sps_setting( 'used_currency' ) ) ); ?></label>
+					<div class="inline">
+						<input type="number" id="sps-f-used" name="used_price" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+						<a class="btn faint mini" data-used-link target="_blank" rel="noopener" href="#">🔎 <?php echo esc_html( sprintf( /* translators: %s: site */ __( 'Check on %s', 'subaru-parts-inventory' ), sps_setting( 'used_name' ) ) ); ?></a>
+					</div>
+					<div class="hint" data-used-hint></div>
 				</div>
 				<div class="full shop-field">
 					<label class="field" for="sps-f-shop"><?php echo esc_html( sprintf( /* translators: 1: shop, 2: currency */ __( '%1$s price, %2$s (new)', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ), sps_setting( 'shop_currency' ) ) ); ?></label>
@@ -458,6 +473,10 @@ class SPS_App {
 			'remembered'   => __( 'remembered price from', 'subaru-parts-inventory' ),
 			'checkShop'    => __( 'Check on %s', 'subaru-parts-inventory' ),
 			'estValue'     => __( '≈ value', 'subaru-parts-inventory' ),
+			'usedPrice'    => __( 'Used price', 'subaru-parts-inventory' ),
+			'notCounted'   => __( 'not counted (unusable)', 'subaru-parts-inventory' ),
+			'excluded'     => __( 'unusable not counted', 'subaru-parts-inventory' ),
+			'usedBetter'   => __( 'used price wins for used / bad parts', 'subaru-parts-inventory' ),
 			'valueOfList'  => __( '%d%% of list price', 'subaru-parts-inventory' ),
 			'unlabelled'   => __( 'No label', 'subaru-parts-inventory' ),
 			'noPhoto'      => __( 'no photo', 'subaru-parts-inventory' ),

@@ -55,20 +55,19 @@ Inside each parts.subaru.com category, the diagrams are grouped by Subaru **serv
 
 ## Inventory value
 
-The *Est. value* total counts every part you still have × quantity. Each part's value comes from the first of these that is set:
+The *Est. value* total counts every part you still have × quantity. **Unusable parts are not counted.** Each part's value comes from the first of these that is set:
 
 1. **Your own value:** the *Estimated value* you typed on the part.
-2. **Shop price (4turbo.pl):** the *4turbo.pl price* in zł × exchange rate × condition %. Next to the field, **🔎 Check on 4turbo.pl** opens a search for the part number in your browser, so you can copy the price. A price is remembered per part number and reused for every part with that number. You can also bulk-import a price list (`part_number;price`) under *Import / Export*.
-3. **parts.subaru.com list price** (USD) × exchange rate × condition %.
+2. **Used parts and bad parts: RRR.lt price (used, €).** The used-market price counts in full for *used* parts and at bad % ÷ used % (50 % by default) for *bad* parts. **🔎 Check on RRR.lt** opens a search for the part number.
+3. **4turbo.pl price (new, zł)** × exchange rate × condition %. **🔎 Check on 4turbo.pl** opens a search for the part number.
+4. **parts.subaru.com list price** (USD) × exchange rate × condition %.
 
-Settings → *Automatic value estimate* holds:
-- the shop name and search link (`{pn}` is replaced by the part number);
-- the exchange rates (default 1 zł = 0.23 €, 1 USD = 0.92 €);
-- the condition percentages (default new 80 %, used 50 %, bad 25 %, unusable 10 %).
+Prices are remembered per part number and reused for every part with that number. You can bulk-import price lists (`part_number;price`) for either site under *Import / Export*. Settings → *Automatic value estimate* holds:
+- the site names and search links (`{pn}` is replaced by the part number);
+- the exchange rates (default 1 zł = 0.23 €, RRR.lt 1 € = 1 €, 1 USD = 0.92 €);
+- the condition percentages.
 
-Estimated totals are shown with "~".
-
-4turbo.pl is protected by Cloudflare against automated access, so prices are not fetched automatically; you enter or import them.
+4turbo.pl and RRR.lt are not fetched automatically (4turbo.pl blocks automated access); you enter or import the prices.
 
 ## Part-number library (auto names & boxes)
 

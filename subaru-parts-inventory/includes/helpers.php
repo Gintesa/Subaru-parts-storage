@@ -149,6 +149,10 @@ function sps_default_settings() {
 		'shop_search_url'   => 'https://www.google.com/search?q=site%3A4turbo.pl+{pn}',
 		'shop_currency'     => 'zł',
 		'shop_rate'         => 0.23,
+		'used_name'         => 'RRR.lt',
+		'used_search_url'   => 'https://www.google.com/search?q=site%3Arrr.lt+{pn}',
+		'used_currency'     => '€',
+		'used_rate'         => 1,
 		'value_factors'     => array( 'new' => 80, 'used' => 50, 'bad' => 25, 'unusable' => 10 ),
 		'distance_unit'     => 'km',
 		'currency'          => '€',
@@ -213,6 +217,7 @@ function sps_meta_fields() {
 		'sale_price'     => 'money',
 		'weight'         => 'decimal',
 		'shop_price'     => 'money',
+		'used_price'     => 'money',
 		'public'         => 'bool',
 		'private_notes'  => 'textarea',
 	);
@@ -280,6 +285,7 @@ function sps_meta( $post_id, $key, $default = '' ) {
  */
 function sps_save_part_meta( $post_id, array $data ) {
 	$old_shop = sps_meta( $post_id, 'shop_price' );
+	$old_used = sps_meta( $post_id, 'used_price' );
 	foreach ( sps_meta_fields() as $key => $type ) {
 		if ( ! array_key_exists( $key, $data ) ) {
 			continue;
@@ -289,6 +295,10 @@ function sps_save_part_meta( $post_id, array $data ) {
 	if ( array_key_exists( 'shop_price', $data ) && (string) $old_shop !== (string) sps_meta( $post_id, 'shop_price' ) ) {
 		update_post_meta( $post_id, '_sps_shop_price_date', current_time( 'Y-m-d' ) );
 		sps_set_shop_price( sps_meta( $post_id, 'part_number' ), sps_meta( $post_id, 'shop_price' ) );
+	}
+	if ( array_key_exists( 'used_price', $data ) && (string) $old_used !== (string) sps_meta( $post_id, 'used_price' ) ) {
+		update_post_meta( $post_id, '_sps_used_price_date', current_time( 'Y-m-d' ) );
+		sps_set_shop_price( sps_meta( $post_id, 'part_number' ), sps_meta( $post_id, 'used_price' ), '', 'used' );
 	}
 	sps_refresh_derived_meta( $post_id );
 }
@@ -630,8 +640,11 @@ function sps_part_data( $post_id, $context = 'public' ) {
 			'value_factor'   => $pv['factor'],
 			'value_fmt'      => $pv['value'] ? sps_money( $pv['value'] ) : '',
 			'shop_price'     => sps_meta( $post_id, 'shop_price' ),
-			'shop'           => $pv['shop'] ? $pv['shop'] : sps_shop_price( $post_id ),
+			'shop'           => 'shop' === $pv['source'] ? $pv['shop'] : sps_shop_price( $post_id ),
 			'shop_search'    => sps_shop_search_url( $data['part_number'] ),
+			'used_price'     => sps_meta( $post_id, 'used_price' ),
+			'used'           => 'used' === $pv['source'] ? $pv['shop'] : sps_shop_price( $post_id, 'used' ),
+			'used_search'    => sps_shop_search_url( $data['part_number'], 'used' ),
 			'edit_url'       => get_edit_post_link( $post_id, 'raw' ),
 			'removed_from'   => (string) sps_meta( $post_id, 'removed_from' ),
 			'purchase_price' => sps_meta( $post_id, 'purchase_price' ),
@@ -919,7 +932,25 @@ function sps_part_value( $post_id ) {
 	$cond    = (string) sps_meta( $post_id, 'condition', 'used' );
 	$factor  = isset( $factors[ $cond ] ) ? (int) $factors[ $cond ] : 50;
 
-	// 1st estimate: shop price (4turbo.pl) – on this part, or remembered for this part number.
+	// Unusable parts are not counted.
+	if ( 'unusable' === $cond ) {
+		return array( 'value' => 0.0, 'source' => 'excluded', 'msrp' => null, 'shop' => null, 'factor' => 0 );
+	}
+
+	// Used / bad parts: used-market price (RRR.lt). It already is a used price, so "used" counts 100 %
+	// and "bad" counts bad % ÷ used % of it (25 ÷ 50 = 50 % by default).
+	if ( 'new' !== $cond ) {
+		$used = sps_shop_price( $post_id, 'used' );
+		if ( $used ) {
+			$base = isset( $factors['used'] ) && (int) $factors['used'] > 0 ? (int) $factors['used'] : 50;
+			$pct  = 'used' === $cond ? 100 : (int) round( 100 * $factor / $base );
+			$rate = (float) sps_setting( 'used_rate' );
+			$rate = $rate > 0 ? $rate : 1;
+			return array( 'value' => round( $used['price'] * $rate * $pct / 100, 2 ), 'source' => 'used', 'msrp' => null, 'shop' => $used, 'factor' => $pct );
+		}
+	}
+
+	// Next: new-part shop price (4turbo.pl) – on this part, or remembered for this part number.
 	$shop = sps_shop_price( $post_id );
 	if ( $shop ) {
 		$rate = (float) sps_setting( 'shop_rate' );
@@ -948,26 +979,26 @@ function sps_part_value( $post_id ) {
  *
  * @return array<string,array{0:float,1:string}>
  */
-function sps_shop_prices() {
-	$all = get_option( 'sps_shop_prices', array() );
+function sps_shop_prices( $kind = 'shop' ) {
+	$all = get_option( 'used' === $kind ? 'sps_used_prices' : 'sps_shop_prices', array() );
 	return is_array( $all ) ? $all : array();
 }
 
 /**
  * Remember a shop price for a part number (used by every part with that number).
  */
-function sps_set_shop_price( $number, $price, $date = '' ) {
+function sps_set_shop_price( $number, $price, $date = '', $kind = 'shop' ) {
 	$norm = sps_normalize_number( $number );
 	if ( '' === $norm ) {
 		return;
 	}
-	$all = sps_shop_prices();
+	$all = sps_shop_prices( $kind );
 	if ( '' === $price || null === $price || (float) $price <= 0 ) {
 		unset( $all[ $norm ] );
 	} else {
 		$all[ $norm ] = array( round( (float) $price, 2 ), $date ? $date : current_time( 'Y-m-d' ) );
 	}
-	update_option( 'sps_shop_prices', $all, false );
+	update_option( 'used' === $kind ? 'sps_used_prices' : 'sps_shop_prices', $all, false );
 	sps_flush_caches();
 }
 
@@ -976,23 +1007,24 @@ function sps_set_shop_price( $number, $price, $date = '' ) {
  *
  * @return array{price:float,date:string,url:string}|null
  */
-function sps_shop_price( $post_id ) {
-	$pn  = (string) sps_meta( $post_id, 'part_number' );
-	$own = sps_meta( $post_id, 'shop_price' );
-	$all = sps_shop_prices();
-	$hit = null;
+function sps_shop_price( $post_id, $kind = 'shop' ) {
+	$field = 'used' === $kind ? 'used_price' : 'shop_price';
+	$pn    = (string) sps_meta( $post_id, 'part_number' );
+	$own   = sps_meta( $post_id, $field );
+	$all   = sps_shop_prices( $kind );
+	$hit   = null;
 	if ( '' !== $own && (float) $own > 0 ) {
-		$hit = array( (float) $own, (string) sps_meta( $post_id, 'shop_price_date' ) );
+		$hit = array( (float) $own, (string) sps_meta( $post_id, $field . '_date' ) );
 	} elseif ( '' !== $pn && isset( $all[ sps_normalize_number( $pn ) ] ) ) {
 		$hit = $all[ sps_normalize_number( $pn ) ];
 	}
 	if ( ! $hit ) {
 		return null;
 	}
-	return array( 'price' => (float) $hit[0], 'date' => (string) $hit[1], 'url' => sps_shop_search_url( $pn ) );
+	return array( 'price' => (float) $hit[0], 'date' => (string) $hit[1], 'url' => sps_shop_search_url( $pn, $kind ) );
 }
 
-function sps_shop_search_url( $number ) {
-	$tpl = (string) sps_setting( 'shop_search_url' );
+function sps_shop_search_url( $number, $kind = 'shop' ) {
+	$tpl = (string) sps_setting( 'used' === $kind ? 'used_search_url' : 'shop_search_url' );
 	return '' === $tpl || '' === (string) $number ? '' : str_replace( '{pn}', rawurlencode( sps_normalize_number( $number ) ), $tpl );
 }

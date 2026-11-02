@@ -236,6 +236,13 @@ class SPS_Admin {
 		self::field( $post->ID, 'sale_price', sprintf( __( 'Asking price (%s)', 'subaru-parts-inventory' ), $cur ), array( 'type' => 'number', 'attrs' => 'min="0" step="0.01"', 'help' => __( 'Shown publicly only if enabled in Settings.', 'subaru-parts-inventory' ) ) );
 		self::field( $post->ID, 'weight', __( 'Weight (kg)', 'subaru-parts-inventory' ), array( 'type' => 'number', 'attrs' => 'min="0" step="0.01"' ) );
 		/* translators: 1: shop, 2: currency */
+		/* translators: 1: site, 2: currency */
+		self::field( $post->ID, 'used_price', sprintf( __( '%1$s price, used (%2$s)', 'subaru-parts-inventory' ), sps_setting( 'used_name' ), sps_setting( 'used_currency' ) ), array( 'type' => 'number', 'attrs' => 'min="0" step="0.01"', 'help' => __( 'Used-market price. Used for the value of used / bad parts. Remembered for this part number.', 'subaru-parts-inventory' ) ) );
+		$used_search = sps_shop_search_url( sps_meta( $post->ID, 'part_number' ), 'used' );
+		if ( $used_search ) {
+			/* translators: %s: site */
+			echo '<p><a class="button" target="_blank" rel="noopener" href="' . esc_url( $used_search ) . '">🔎 ' . esc_html( sprintf( __( 'Check on %s', 'subaru-parts-inventory' ), sps_setting( 'used_name' ) ) ) . '</a></p>';
+		}
 		self::field( $post->ID, 'shop_price', sprintf( __( '%1$s price (%2$s)', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ), sps_setting( 'shop_currency' ) ), array( 'type' => 'number', 'attrs' => 'min="0" step="0.01"', 'help' => __( 'New-part price in the shop. Used for the value estimate (× condition %). Remembered for this part number.', 'subaru-parts-inventory' ) ) );
 		$search = sps_shop_search_url( sps_meta( $post->ID, 'part_number' ) );
 		if ( $search ) {
@@ -659,6 +666,7 @@ class SPS_Admin {
 			'value_manual' => 0,
 			'value_est'    => 0,
 			'value_shop'   => 0,
+			'value_excluded' => 0,
 			'value_none'   => 0,
 			'cost'         => 0.0,
 			'by_group'     => array_fill_keys( array_keys( sps_conditions() ), 0 ),
@@ -683,8 +691,12 @@ class SPS_Admin {
 			$stats['items'] += $qty;
 			$pv              = sps_part_value( $id );
 			$stats['value'] += $pv['value'] * $qty;
-			$stats[ 'value_' . ( 'manual' === $pv['source'] ? 'manual' : ( 'none' === $pv['source'] ? 'none' : 'est' ) ) ]++;
-			if ( 'shop' === $pv['source'] ) {
+			if ( 'excluded' === $pv['source'] ) {
+				$stats['value_excluded']++;
+			} else {
+				$stats[ 'value_' . ( 'manual' === $pv['source'] ? 'manual' : ( 'none' === $pv['source'] ? 'none' : 'est' ) ) ]++;
+			}
+			if ( 'shop' === $pv['source'] || 'used' === $pv['source'] ) {
 				$stats['value_shop']++;
 			}
 			$stats['cost']  += (float) sps_meta( $id, 'purchase_price', 0 ) * $qty;

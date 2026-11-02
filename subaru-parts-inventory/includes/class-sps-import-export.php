@@ -47,6 +47,7 @@ class SPS_Import_Export {
 			'value',
 			'sale_price',
 			'shop_price',
+			'used_price',
 			'weight',
 			'public',
 			'private_notes',
@@ -110,12 +111,13 @@ class SPS_Import_Export {
 				</div>
 			</div>
 			<div class="sps-panel" style="margin-top:16px">
-				<h2><?php echo esc_html( sprintf( /* translators: %s: shop */ __( '%s price list', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ) ) ); ?></h2>
+				<h2><?php echo esc_html( sprintf( /* translators: %s: shop */ __( '%s price list', 'subaru-parts-inventory' ), sps_setting( 'shop_name' ) . ' / ' . sps_setting( 'used_name' ) ) ); ?></h2>
 				<p><?php echo esc_html( sprintf( /* translators: 1: count, 2: currency */ __( '%1$d part numbers have a shop price. Prices are in %2$s and are used for the value estimate (× condition %%).', 'subaru-parts-inventory' ), count( sps_shop_prices() ), sps_setting( 'shop_currency' ) ) ); ?></p>
 				<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<input type="hidden" name="action" value="sps_shop_prices" />
 					<?php wp_nonce_field( 'sps_shop_prices' ); ?>
-					<p><input type="file" name="prices" accept=".csv,.txt,text/csv" required /> <button class="button"><?php esc_html_e( 'Import prices', 'subaru-parts-inventory' ); ?></button></p>
+					<p><select name="kind"><option value="shop"><?php echo esc_html( sps_setting( 'shop_name' ) . ' (' . __( 'new', 'subaru-parts-inventory' ) . ', ' . sps_setting( 'shop_currency' ) . ')' ); ?></option><option value="used"><?php echo esc_html( sps_setting( 'used_name' ) . ' (' . __( 'used', 'subaru-parts-inventory' ) . ', ' . sps_setting( 'used_currency' ) . ')' ); ?></option></select>
+					<input type="file" name="prices" accept=".csv,.txt,text/csv" required /> <button class="button"><?php esc_html_e( 'Import prices', 'subaru-parts-inventory' ); ?></button></p>
 					<p class="description"><?php esc_html_e( 'CSV with part number and price (e.g. "16546AA10A;129,99"). Comma, semicolon or tab separated; decimal comma is fine; a header row is optional.', 'subaru-parts-inventory' ); ?></p>
 				</form>
 			</div>
@@ -198,7 +200,8 @@ class SPS_Import_Export {
 			$counts = array( "\t" => substr_count( $first, "\t" ), ';' => substr_count( $first, ';' ), ',' => substr_count( $first, ',' ) );
 			arsort( $counts );
 			$delim = key( $counts );
-			$all   = sps_shop_prices();
+			$kind  = isset( $_POST['kind'] ) && 'used' === $_POST['kind'] ? 'used' : 'shop';
+			$all   = sps_shop_prices( $kind );
 			while ( ( $row = fgetcsv( $fh, 0, $delim ) ) !== false ) {
 				if ( count( $row ) < 2 ) {
 					continue;
@@ -212,7 +215,7 @@ class SPS_Import_Export {
 				$n++;
 			}
 			fclose( $fh ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-			update_option( 'sps_shop_prices', $all, false );
+			update_option( 'used' === $kind ? 'sps_used_prices' : 'sps_shop_prices', $all, false );
 			sps_flush_caches();
 		}
 		/* translators: %d: count */

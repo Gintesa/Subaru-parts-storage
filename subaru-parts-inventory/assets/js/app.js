@@ -162,7 +162,7 @@
 				html = stat(T.parts, esc(s.parts), esc(s.items) + ' ' + esc(T.pieces.toLowerCase()), 'inv') +
 					stat(T.notBoxed, esc(s.not_boxed || 0), esc(s.unlabelled) + ' ' + esc(T.unlabelled.toLowerCase()), 'labels', (s.not_boxed || s.unlabelled) ? 'warn' : 'ok') +
 					stat(T.newUsed, esc(s['new']) + '<small>/</small>' + esc(s.used), '', 'inv') +
-					stat(T.value, (s.value_est ? '~' : '') + esc(s.value_fmt || '—'), s.value_none ? esc(s.value_none) + ' ' + esc(T.valueNone) : (s.value_est ? esc(T.valueEst) : esc(T.cost) + ' ' + esc(s.cost_fmt || '—')), 'tools', s.value_none ? 'warn' : '');
+					stat(T.value, (s.value_est ? '~' : '') + esc(s.value_fmt || '—'), s.value_none ? esc(s.value_none) + ' ' + esc(T.valueNone) : (s.value_excluded ? esc(s.value_excluded) + ' ' + esc(T.excluded) : (s.value_est ? esc(T.valueEst) : esc(T.cost) + ' ' + esc(s.cost_fmt || '—'))), 'tools', s.value_none ? 'warn' : '');
 			} else {
 				html = stat(T.parts, esc(s.parts), '', 'inv') + stat(T.newLbl, esc(s['new']), '', 'inv') + stat(T.usedLbl, esc(s.used), '', 'inv') +
 					stat(T.boxes, String(boxes ? boxes.length : '—'), '', 'boxes');
@@ -346,8 +346,11 @@
 			var src = '';
 			if (d.value_source === 'estimate') { src = T.valueOfList.replace('%d', d.value_factor).replace('%%', '%'); }
 			if (d.value_source === 'shop' && d.shop) { src = d.value_factor + '% · ' + T.fromShop.replace('%s', C.shop.name) + ' ' + Number(d.shop.price).toFixed(2) + ' ' + C.shop.currency; }
+			if (d.value_source === 'used' && d.used) { src = d.value_factor + '% · ' + T.fromShop.replace('%s', C.used.name) + ' ' + Number(d.used.price).toFixed(2) + ' ' + C.used.currency; }
 			kv.push([T.valueEach, (d.value_source !== 'manual' ? '~' : '') + esc(d.value_fmt) + (d.quantity > 1 ? ' × ' + esc(d.quantity) : '') + (src ? ' <span class="pmeta" style="display:inline">(' + esc(src) + ')</span>' : '')]);
 		}
+		if (M && d.value_source === 'excluded') { kv.push([T.valueEach, '<span class="pmeta" style="display:inline">' + esc(T.notCounted) + '</span>']); }
+		if (M && d.used_search && d.condition !== 'new') { kv.push([T.usedPrice, (d.used ? esc(Number(d.used.price).toFixed(2) + ' ' + C.used.currency) + (d.used.date ? ' <span class="pmeta" style="display:inline">· ' + esc(d.used.date) + '</span>' : '') + ' · ' : '') + '<a href="' + esc(d.used_search) + '" target="_blank" rel="noopener">🔎 ' + esc(T.checkShop.replace('%s', C.used.name)) + '</a>']); }
 		if (M && d.shop_search) { kv.push([T.shopPrice, (d.shop ? esc(Number(d.shop.price).toFixed(2) + ' ' + C.shop.currency) + (d.shop.date ? ' <span class="pmeta" style="display:inline">· ' + esc(d.shop.date) + '</span>' : '') + ' · ' : '') + '<a href="' + esc(d.shop_search) + '" target="_blank" rel="noopener">🔎 ' + esc(T.checkShop.replace('%s', C.shop.name)) + '</a>']); }
 		if (d.catalog) {
 			if (d.catalog.aliases && d.catalog.aliases.replace(/\.$/, '') !== d.name) { kv.push([T.official, esc(d.catalog.aliases)]); }
@@ -954,7 +957,7 @@
 		$('[data-form-title]', form).textContent = T.editing + ': ' + (d.part_number || d.name) + ' · ' + d.sku;
 		$('[data-submit]', form).textContent = T.saveChanges;
 		['part_number', 'alt_numbers', 'epc_ref', 'condition_notes', 'mileage', 'removed_from', 'quantity', 'status', 'box_override', 'bin',
-			'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'shop_price', 'private_notes'].forEach(function (k) { setField(k, d[k]); });
+			'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'shop_price', 'used_price', 'private_notes'].forEach(function (k) { setField(k, d[k]); });
 		setField('name', d.name);
 		setField('condition', d.condition);
 		setField('public', d['public']);
@@ -1056,20 +1059,39 @@
 	function syncShop() {
 		if (!form || !C.shop) { return; }
 		var pn = form.part_number.value.replace(/[^a-z0-9]/gi, '').toUpperCase();
-		var link = $('[data-shop-link]', form);
-		if (link) {
-			link.href = pn && C.shop.search ? C.shop.search.replace('{pn}', encodeURIComponent(pn)) : '#';
-			link.classList.toggle('disabled', !pn);
-		}
-		var hint = $('[data-shop-hint]', form);
-		var known = pn && C.shop.prices ? C.shop.prices[pn] : null;
-		var price = parseFloat(String(form.shop_price.value).replace(',', '.'));
-		if (!(price > 0) && known && !form.part_id.value) { form.shop_price.placeholder = Number(known[0]).toFixed(2); }
-		var use = price > 0 ? price : (known ? Number(known[0]) : 0);
 		var c = form.querySelector('[name="condition"]:checked');
-		var f = c && C.shop.factors[c.value] != null ? C.shop.factors[c.value] : 50;
-		if (hint) {
-			hint.textContent = use > 0 ? (known && !(price > 0) ? T.remembered + ' ' + known[1] + ' · ' : '') + T.estValue + ' ' + money(use * (C.shop.rate || 1) * f / 100) + ' (' + f + '%)' : '';
+		var cond = c ? c.value : 'used';
+		var f = C.shop.factors[cond] != null ? Number(C.shop.factors[cond]) : 50;
+		var num = function (el) { return parseFloat(String(el.value).replace(',', '.')); };
+		var setLink = function (sel, cfg) {
+			var link = $(sel, form);
+			if (!link) { return; }
+			link.href = pn && cfg.search ? cfg.search.replace('{pn}', encodeURIComponent(pn)) : '#';
+			link.classList.toggle('disabled', !pn);
+		};
+		setLink('[data-shop-link]', C.shop);
+		setLink('[data-used-link]', C.used);
+		var known = pn && C.shop.prices ? C.shop.prices[pn] : null;
+		var knownU = pn && C.used.prices ? C.used.prices[pn] : null;
+		var shopP = num(form.shop_price), usedP = num(form.used_price);
+		if (!form.part_id.value) {
+			form.shop_price.placeholder = !(shopP > 0) && known ? Number(known[0]).toFixed(2) : '0,00';
+			form.used_price.placeholder = !(usedP > 0) && knownU ? Number(knownU[0]).toFixed(2) : '0,00';
+		}
+		var useShop = shopP > 0 ? shopP : (known ? Number(known[0]) : 0);
+		var useUsed = usedP > 0 ? usedP : (knownU ? Number(knownU[0]) : 0);
+		var hintS = $('[data-shop-hint]', form), hintU = $('[data-used-hint]', form);
+		hintS.textContent = ''; hintU.textContent = '';
+		if (cond === 'unusable') { hintS.textContent = T.notCounted; return; }
+		if (cond !== 'new' && useUsed > 0) {
+			var base = Number(C.shop.factors.used) || 50;
+			var pct = cond === 'used' ? 100 : Math.round(100 * f / base);
+			hintU.textContent = (knownU && !(usedP > 0) ? T.remembered + ' ' + knownU[1] + ' · ' : '') + T.estValue + ' ' + money(useUsed * (C.used.rate || 1) * pct / 100) + ' (' + pct + '%)';
+			if (useShop > 0) { hintS.textContent = T.usedBetter; }
+			return;
+		}
+		if (useShop > 0) {
+			hintS.textContent = (known && !(shopP > 0) ? T.remembered + ' ' + known[1] + ' · ' : '') + T.estValue + ' ' + money(useShop * (C.shop.rate || 1) * f / 100) + ' (' + f + '%)';
 		}
 	}
 
@@ -1103,6 +1125,8 @@
 		form.part_number.addEventListener('input', identify);
 		form.part_number.addEventListener('input', syncShop);
 		form.shop_price.addEventListener('input', syncShop);
+		form.used_price.addEventListener('input', syncShop);
+		$('[data-used-link]', form).addEventListener('click', function (e) { if (this.getAttribute('href') === '#') { e.preventDefault(); form.part_number.focus(); } });
 		form.addEventListener('change', function (e) { if (e.target.name === 'condition') { syncShop(); } });
 		$('[data-shop-link]', form).addEventListener('click', function (e) { if (this.getAttribute('href') === '#') { e.preventDefault(); form.part_number.focus(); } });
 		form.name.addEventListener('input', function () { form.name.dataset.auto = ''; });
@@ -1139,7 +1163,7 @@
 			var fd = new FormData(form);
 			var body = {};
 			['name', 'part_number', 'alt_numbers', 'epc_ref', 'category_id', 'condition_notes', 'mileage', 'removed_from', 'quantity', 'status', 'fitment',
-				'box_override', 'bin', 'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'shop_price', 'weight', 'description', 'private_notes', 'note'].forEach(function (k) {
+				'box_override', 'bin', 'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'shop_price', 'used_price', 'weight', 'description', 'private_notes', 'note'].forEach(function (k) {
 				body[k] = fd.get(k) == null ? '' : String(fd.get(k)).trim();
 			});
 			body.condition = fd.get('condition') || 'used';
@@ -1176,6 +1200,7 @@
 				done.querySelector('[data-done-open]').addEventListener('click', function () { fillForm(d); done.hidden = true; });
 				toast(T.saved + ' ' + d.sku);
 				if (C.shop && d.shop && d.part_number) { C.shop.prices[d.part_number.replace(/[^a-z0-9]/gi, '').toUpperCase()] = [d.shop.price, d.shop.date]; }
+				if (C.used && d.used && d.part_number) { C.used.prices[d.part_number.replace(/[^a-z0-9]/gi, '').toUpperCase()] = [d.used.price, d.used.date]; }
 				if (wasNew) {
 					resetForm(true);
 					form.part_number.focus();
