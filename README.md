@@ -35,9 +35,9 @@ The plugin ships the complete parts.subaru.com catalog for the 2017 WRX 2.0L 6MT
 
 Inside each parts.subaru.com category, the diagrams are grouped by Subaru **service-manual section**: FU, EC, IN, ME, EX, CO, LU, SP, IG, SC, EN · CS, 6MT, CL · FS, RS, WT, TPM, DI, DS, VDC, BR, PB, PS · AC, AB, SB, LI, WW, ET, GW, BS, IDI, SE, SL, SR, EI, EB, WI, GN. Diagnostics-only "(diag)" sections are not used.
 
-- **Sub-box mode** (default): box codes are `EN-FU`, `EN-IN`, `EN-ME`, `SB-BR`, `EL-LI`, … Accessories stays one box (`AX`).
+- **Sub-box mode** (default): box codes are `EN-FU`, `EN-IN`, `EN-ME`, `SB-BR`, `EL-LI`, … Accessories and your own categories get one sub-box per sub-category (`AX-AM` Audio Media, `AX-STI` STI Brand, …).
 - **Category mode:** one box per category (`EN`, `SB`, `EL`, …).
-- **Tools → Clean up & rebuild boxes** (in the parts app) does the following, then reloads the page:
+- **Clean up & rebuild boxes** (parts app → *Storage boxes* → ⚙ *Box setup*, or wp-admin → *Subaru Parts → Boxes & images*) does the following, then reloads the page:
   - removes every box code;
   - merges duplicate categories;
   - deletes empty categories that are not from the Subaru catalog;
@@ -49,7 +49,7 @@ Inside each parts.subaru.com category, the diagrams are grouped by Subaru **serv
 
 ## Catalog images
 
-- **Tools → Download catalog images to this site** copies all ~3,000 part pictures and diagrams from the parts.subaru.com image server to `wp-content/uploads/sps-library/images/`, 12 at a time. No big upload is needed, so it avoids hosting upload limits and plugins that load whole uploads into memory. You can stop and continue later. Images the server doesn't have are reported; network errors just pause the download.
+- **Download catalog images to this site** (parts app → *Tools*, or wp-admin → *Subaru Parts → Boxes & images*) copies all ~3,000 part pictures and diagrams from the parts.subaru.com image server to `wp-content/uploads/sps-library/images/`, 12 at a time. No big upload is needed, so it avoids hosting upload limits and plugins that load whole uploads into memory. You can stop and continue later. Images the server doesn't have are reported; network errors just pause the download.
 - **Add missing pictures:** in the Subaru catalog, use **📷 Add picture** on any part, or **📷 Add / replace diagram image**. On a part card, **Use my photo as catalog picture** copies one of your own photos. Your pictures are stored in `images/custom/` and survive catalog re-imports.
 - **Thumbnails:** every category, sub-box and diagram shows a diagram thumbnail in the catalog browser and on box cards. In a diagram, **Use as thumbnail for …** picks a different one.
 

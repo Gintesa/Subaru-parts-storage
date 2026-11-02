@@ -14,9 +14,104 @@ defined( 'ABSPATH' ) || exit;
 
 class SPS_Boxes {
 
+	public static function init() {
+		add_action( 'admin_menu', array( __CLASS__, 'menu' ), 15 );
+	}
+
+	public static function menu() {
+		add_submenu_page( 'edit.php?post_type=' . SPS_PT, __( 'Boxes', 'subaru-parts-inventory' ), __( 'Boxes & images', 'subaru-parts-inventory' ), SPS_CAP, 'sps-boxes', array( __CLASS__, 'admin_page' ) );
+	}
+
+	/**
+	 * wp-admin page: box clean-up / rebuild + catalog image download.
+	 */
+	public static function admin_page() {
+		$codes = self::all_codes();
+		ksort( $codes, SORT_NATURAL );
+		?>
+		<div class="wrap sps-wrap sps-boxes-admin">
+			<h1><?php esc_html_e( 'Boxes & catalog images', 'subaru-parts-inventory' ); ?></h1>
+			<div class="sps-columns">
+				<div class="sps-panel">
+					<?php echo self::panel_html( 'admin' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
+					<p><a href="<?php echo esc_url( admin_url( 'edit.php?post_type=' . SPS_PT . '&page=sps-labels' ) ); ?>"><?php esc_html_e( 'Print box labels →', 'subaru-parts-inventory' ); ?></a></p>
+				</div>
+				<div class="sps-panel">
+					<h3><?php esc_html_e( 'Catalog images', 'subaru-parts-inventory' ); ?></h3>
+					<p><?php esc_html_e( 'Copies all part pictures and diagrams from the parts.subaru.com image server to this website, a few at a time. Keep this page open until it finishes; you can stop and continue later.', 'subaru-parts-inventory' ); ?></p>
+					<div class="sps-progress"><i data-img-bar></i></div>
+					<p data-img-status></p>
+					<p><button type="button" class="button button-primary" data-action="img-fetch"><?php esc_html_e( 'Download catalog images to this site', 'subaru-parts-inventory' ); ?></button>
+					<button type="button" class="button" data-action="img-stop" hidden><?php esc_html_e( 'Stop', 'subaru-parts-inventory' ); ?></button>
+					<button type="button" class="button" data-action="img-retry" hidden><?php esc_html_e( 'Retry not-available images', 'subaru-parts-inventory' ); ?></button></p>
+					<ul data-img-errors></ul>
+				</div>
+			</div>
+			<h2><?php esc_html_e( 'Current boxes', 'subaru-parts-inventory' ); ?></h2>
+			<table class="widefat striped" style="max-width:900px"><thead><tr><th><?php esc_html_e( 'Box', 'subaru-parts-inventory' ); ?></th><th><?php esc_html_e( 'Category', 'subaru-parts-inventory' ); ?></th><th></th></tr></thead><tbody>
+			<?php foreach ( $codes as $code => $tid ) : $term = get_term( $tid, SPS_TAX_CAT ); ?>
+				<tr><td><strong class="sps-box-code"><?php echo esc_html( $code ); ?></strong></td><td><?php echo esc_html( html_entity_decode( sps_category_path( $term ) ) ); ?></td>
+				<td><a target="_blank" href="<?php echo esc_url( SPS_Labels::print_url( array( $tid ), 'box' ) ); ?>"><?php esc_html_e( 'Box label', 'subaru-parts-inventory' ); ?></a></td></tr>
+			<?php endforeach; ?>
+			</tbody></table>
+		</div>
+		<style>.sps-boxes-admin .box-mode label{display:block;margin:4px 0}.sps-boxes-admin .checkline{display:block;margin:6px 0}.sps-progress{height:10px;background:#f0f0f1;border-radius:5px;overflow:hidden}.sps-progress i{display:block;height:100%;width:0;background:#2271b1;transition:width .3s}</style>
+		<script>
+		(function () {
+			var rest = <?php echo wp_json_encode( esc_url_raw( rest_url( SPS_REST::NS . '/' ) ) ); ?>, nonce = <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>;
+			var T = <?php echo wp_json_encode( array(
+				'confirm' => __( 'Remove all box codes and rebuild them? Box labels must be reprinted.', 'subaru-parts-inventory' ),
+				'working' => __( 'Working… this can take a minute.', 'subaru-parts-inventory' ),
+				'report'  => __( 'Done: %1$d boxes, %2$d duplicates merged, %3$d empty categories deleted, %4$d parts re-filed, %5$d old box overrides cleared, %6$d parts set to Not boxed.', 'subaru-parts-inventory' ),
+				'status'  => __( '%1$d of %2$d images on this site · %3$d not available on the image server', 'subaru-parts-inventory' ),
+				'dupes'   => __( 'Duplicate box codes found:', 'subaru-parts-inventory' ),
+			) ); ?>;
+			function api(path, method, body) {
+				return fetch(rest + path, { method: method || 'GET', credentials: 'same-origin', headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+					.then(function (r) { return r.json().then(function (d) { if (!r.ok) { throw new Error(d.message || r.status); } return d; }); });
+			}
+			var q = function (s) { return document.querySelector('.sps-boxes-admin ' + s); };
+			api('boxes/cleanup').then(function (st) {
+				var d = Object.keys(st.duplicates || {});
+				if (d.length) { var w = q('[data-box-dupes]'); w.hidden = false; w.textContent = T.dupes + ' ' + d.map(function (k) { return k + ' ×' + st.duplicates[k]; }).join(', '); }
+			});
+			q('[data-action="box-cleanup"]').addEventListener('click', function () {
+				if (!confirm(T.confirm)) { return; }
+				var b = this; b.disabled = true; q('[data-box-report]').textContent = T.working;
+				var mode = (document.querySelector('.sps-boxes-admin [name="sps_box_mode"]:checked') || {}).value || 'sections';
+				api('boxes/cleanup', 'POST', { mode: mode, delete_empty: q('[data-box-opt="delete_empty"]').checked, unbox: q('[data-box-opt="unbox"]').checked }).then(function (r) {
+					q('[data-box-report]').textContent = T.report.replace('%1$d', r.boxes).replace('%2$d', r.merged).replace('%3$d', r.deleted).replace('%4$d', r.refiled).replace('%5$d', r.overrides).replace('%6$d', r.unboxed);
+					setTimeout(function () { location.reload(); }, 3000);
+				}).catch(function (e) { q('[data-box-report]').textContent = e.message; }).then(function () { b.disabled = false; });
+			});
+			var run = false;
+			function show(st) {
+				q('[data-img-bar]').style.width = (st.total ? Math.round(100 * st.local / st.total) : 0) + '%';
+				q('[data-img-status]').textContent = T.status.replace('%1$d', st.local).replace('%2$d', st.total).replace('%3$d', st.failed);
+				q('[data-action="img-retry"]').hidden = !st.failed || run;
+			}
+			function stop() { run = false; q('[data-action="img-fetch"]').hidden = false; q('[data-action="img-stop"]').hidden = true; }
+			function step(retry) {
+				if (!run) { return; }
+				api('library/images/fetch', 'POST', retry ? { retry: 1 } : {}).then(function (r) {
+					show(r.status);
+					q('[data-img-errors]').innerHTML = (r.errors || []).slice(0, 5).map(function (e) { var li = document.createElement('li'); li.textContent = e; return li.outerHTML; }).join('');
+					if (r.network) { stop(); return; }
+					if (r.status.remaining > 0 && (r.fetched > 0 || (r.errors || []).length)) { step(false); } else { stop(); }
+				}).catch(function (e) { q('[data-img-status]').textContent = e.message; stop(); });
+			}
+			api('library/images').then(show);
+			q('[data-action="img-fetch"]').addEventListener('click', function () { run = true; this.hidden = true; q('[data-action="img-stop"]').hidden = false; step(false); });
+			q('[data-action="img-stop"]').addEventListener('click', stop);
+			q('[data-action="img-retry"]').addEventListener('click', function () { run = true; this.hidden = true; q('[data-action="img-fetch"]').hidden = true; q('[data-action="img-stop"]').hidden = false; step(true); });
+		})();
+		</script>
+		<?php
+	}
+
 	public static function modes() {
 		return array(
-			'sections'   => __( 'Sub-boxes by service-manual section (EN-FU, EN-IN, SB-BR …)', 'subaru-parts-inventory' ),
+			'sections'   => __( 'Sub-boxes: service-manual sections (EN-FU, EN-IN, SB-BR …), Accessories and your own categories by sub-category (AX-AM, AX-STI …)', 'subaru-parts-inventory' ),
 			'categories' => __( 'One box per parts.subaru.com category (EN, SB, EL …)', 'subaru-parts-inventory' ),
 		);
 	}
@@ -62,17 +157,87 @@ class SPS_Boxes {
 			if ( 'sections' !== $mode ) {
 				continue;
 			}
-			foreach ( get_terms( array( 'taxonomy' => SPS_TAX_CAT, 'parent' => $t->term_id, 'hide_empty' => false ) ) as $child ) {
+			$children = get_terms( array( 'taxonomy' => SPS_TAX_CAT, 'parent' => $t->term_id, 'hide_empty' => false ) );
+			$has_sec  = false;
+			foreach ( (array) $children as $child ) {
 				$sec = (string) get_term_meta( $child->term_id, 'sps_section', true );
 				if ( '' !== $sec ) {
+					$has_sec = true;
 					update_term_meta( $child->term_id, 'sps_box_code', $code . '-' . $sec );
 					$n++;
 				}
+			}
+			if ( $has_sec || 'To Sort (Unidentified)' === $name ) {
+				continue;
+			}
+			// Categories without service-manual sections (Accessories, your own "extra" categories):
+			// one sub-box per sub-category, e.g. AX-AM (Audio Media), AX-STI (STI Brand).
+			$used = array();
+			foreach ( (array) $children as $child ) {
+				$sub = self::initials( html_entity_decode( $child->name, ENT_QUOTES ) );
+				$try = $sub;
+				$i   = 2;
+				while ( isset( $used[ $try ] ) ) {
+					$try = $sub . $i++;
+				}
+				$used[ $try ] = true;
+				update_term_meta( $child->term_id, 'sps_box_code', $code . '-' . $try );
+				$n++;
 			}
 		}
 		update_option( 'sps_box_mode', $mode );
 		sps_flush_caches();
 		return $n;
+	}
+
+	/**
+	 * "Audio Media" → AM, "Protection and Security" → PS, "STI Brand" → STI.
+	 */
+	public static function initials( $name ) {
+		$words = array_values(
+			array_filter(
+				preg_split( '/[^A-Za-z0-9]+/', $name ),
+				static function ( $w ) {
+					return '' !== $w && ! in_array( strtolower( $w ), array( 'and', 'or', 'of', 'the', 'for', 'with' ), true );
+				}
+			)
+		);
+		if ( ! $words ) {
+			return 'X';
+		}
+		foreach ( $words as $w ) {
+			if ( strlen( $w ) >= 2 && strlen( $w ) <= 4 && ctype_upper( $w ) ) {
+				return $w; // Acronym wins: "STI Brand" → STI.
+			}
+		}
+		if ( 1 === count( $words ) ) {
+			return strtoupper( substr( $words[0], 0, 3 ) );
+		}
+		$out = '';
+		foreach ( $words as $w ) {
+			$out .= ctype_upper( $w ) && strlen( $w ) <= 4 ? $w : strtoupper( $w[0] );
+		}
+		return substr( $out, 0, 5 );
+	}
+
+	/**
+	 * Box setup panel (shared by the parts app and the admin Boxes page).
+	 */
+	public static function panel_html( $context = 'app' ) {
+		if ( ! current_user_can( SPS_CAP ) ) {
+			return '<p class="hint">' . esc_html__( 'Box setup needs an administrator.', 'subaru-parts-inventory' ) . '</p>';
+		}
+		$mode = get_option( 'sps_box_mode', 'sections' );
+		$html = '<div class="tool-box" data-box-tool><h3>' . esc_html__( 'Box setup: clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</h3>'
+			. '<p class="hint">' . esc_html__( 'Removes all box codes, merges duplicate categories, deletes empty leftover categories, files every part into its catalog diagram and creates a fresh, unique box scheme. Box labels must be reprinted afterwards.', 'subaru-parts-inventory' ) . '</p>'
+			. '<div class="warn" data-box-dupes hidden></div><div class="svc-pick box-mode">';
+		foreach ( self::modes() as $k => $label ) {
+			$html .= '<label' . ( $mode === $k ? ' class="on"' : '' ) . '><input type="radio" name="sps_box_mode" value="' . esc_attr( $k ) . '"' . checked( $mode, $k, false ) . '>' . esc_html( $label ) . '</label>';
+		}
+		$html .= '</div><label class="checkline"><input type="checkbox" data-box-opt="delete_empty" checked> ' . esc_html__( 'Delete empty categories that are not from the Subaru catalog', 'subaru-parts-inventory' ) . '</label>'
+			. '<label class="checkline"><input type="checkbox" data-box-opt="unbox"> ' . esc_html__( 'Mark all boxed parts as "Not boxed yet" (I will re-sort them)', 'subaru-parts-inventory' ) . '</label>'
+			. '<div class="row-btns"><button type="button" class="btn danger mini button" data-action="box-cleanup">' . esc_html__( 'Clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</button></div><div class="hint" data-box-report></div></div>';
+		return $html;
 	}
 
 	/**

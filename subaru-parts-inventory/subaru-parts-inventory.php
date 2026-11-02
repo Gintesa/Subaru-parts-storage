@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Subaru Parts Inventory
  * Description:       Inventory system for new and used Subaru parts: Subaru-catalog categories mapped to storage boxes, condition grading and inspection notes, printable part and box labels with QR codes and barcodes, scan lookup, CSV import/export, and a public catalogue block, shortcode and widget.
- * Version:           1.4.0
+ * Version:           1.4.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            gintesa
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SPS_VERSION', '1.4.0' );
+define( 'SPS_VERSION', '1.4.1' );
 define( 'SPS_FILE', __FILE__ );
 define( 'SPS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPS_URL', plugin_dir_url( __FILE__ ) );
@@ -66,6 +66,7 @@ add_action(
 		SPS_Labels::init();
 		SPS_Catalog::init();
 		SPS_Library::init();
+		SPS_Boxes::init();
 		SPS_REST::init();
 		SPS_Frontend::init();
 		SPS_App::init();

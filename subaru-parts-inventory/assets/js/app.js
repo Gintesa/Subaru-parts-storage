@@ -441,7 +441,7 @@
 		return api('boxes').then(function (list) {
 			boxes = list;
 			count('boxes', list.length + ' ' + T.boxes.toLowerCase());
-			grid.innerHTML = list.map(function (b) {
+			var boxCard = function (b) {
 				return '<div class="box-card' + (b.count ? '' : ' empty') + '" data-box="' + b.id + '" role="button" tabindex="0">' +
 					(b.thumb ? '<div class="box-thumb"><img src="' + esc(b.thumb) + '" alt="" loading="lazy"></div>' : '') +
 					'<div class="bc">' + esc(b.code) + '<span>' + esc(b.count) + ' ' + esc(T.inBox) + '</span></div>' +
@@ -450,11 +450,18 @@
 					(M ? '<div class="bx">' + (b.label_url ? '<a class="btn faint mini" href="' + esc(b.label_url) + '" target="_blank" rel="noopener">' + esc(T.boxLabel) + '</a>' : '') +
 						(C.canBoxes ? '<button type="button" class="btn faint mini" data-box-edit="' + b.id + '">' + esc(T.editBox) + '</button>' : '') + '</div>' : '') +
 					'</div>';
+			};
+			var lastTop = null;
+			grid.innerHTML = list.map(function (b) {
+				var top = String(b.path).split(' › ')[0];
+				var head = '';
+				if (top !== lastTop) { lastTop = top; head = '<h3 class="box-group">' + esc(top) + '</h3>'; }
+				return head + boxCard(b);
 			}).join('');
 			if (stats && !stats.manager) { loadStats(); }
 		}).catch(function (e) { grid.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
 	}
-	loaders.boxes = loadBoxes;
+	loaders.boxes = function () { loadBoxes(); if (typeof loadBoxStatus === 'function') { loadBoxStatus(); } };
 	function boxById(id) { return (boxes || []).filter(function (b) { return String(b.id) === String(id); })[0]; }
 	$('[data-boxes]').addEventListener('click', function (e) {
 		var ed = e.target.closest('[data-box-edit]');
@@ -1375,7 +1382,7 @@
 			$('[data-action="img-fetch"]').hidden = false;
 			$('[data-action="img-stop"]').hidden = true;
 		};
-		loaders.tools = function () { api('library/images').then(showImg).catch(function () {}); loadBoxStatus(); };
+		loaders.tools = function () { api('library/images').then(showImg).catch(function () {}); };
 		$('[data-action="img-fetch"]').addEventListener('click', function () {
 			imgRun = true; this.hidden = true; $('[data-action="img-stop"]').hidden = false; $('[data-action="img-retry"]').hidden = true; stepImg(false);
 		});

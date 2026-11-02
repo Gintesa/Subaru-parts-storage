@@ -170,7 +170,8 @@ class SPS_App {
 				if ( $manager && SPS_Library::loaded() ) {
 					echo self::section( 'cat', 'catalog', __( 'Subaru catalog', 'subaru-parts-inventory' ), self::catalog_body(), true );
 				}
-				echo self::section( 'boxes', 'box', __( 'Storage boxes', 'subaru-parts-inventory' ), '<p class="hint">' . esc_html__( 'Each box holds one Subaru catalog group. Tap a box to list what is inside.', 'subaru-parts-inventory' ) . '</p><div class="box-grid" data-boxes></div>', true );
+				$box_setup = $manager && current_user_can( SPS_CAP ) ? '<details class="box-setup"' . ( SPS_Boxes::duplicate_codes() || ! get_option( 'sps_boxes_cleaned' ) ? ' open' : '' ) . '><summary>⚙ ' . esc_html__( 'Box setup – clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</summary>' . SPS_Boxes::panel_html() . '</details>' : '';
+				echo self::section( 'boxes', 'box', __( 'Storage boxes', 'subaru-parts-inventory' ), $box_setup . '<p class="hint">' . esc_html__( 'Each box holds one Subaru catalog group. Tap a box to list what is inside.', 'subaru-parts-inventory' ) . '</p><div class="box-grid" data-boxes></div>', true );
 				if ( $manager ) {
 					echo self::section( 'labels', 'label', __( 'Labels to print', 'subaru-parts-inventory' ), self::labels_body(), true );
 					echo self::section( 'log', 'activity', __( 'Condition log & activity', 'subaru-parts-inventory' ), '<div class="log-list" data-activity></div>', true );
@@ -403,15 +404,6 @@ class SPS_App {
 				. '<div class="row-btns"><button type="button" class="btn mini" data-action="img-fetch">' . esc_html__( 'Download catalog images to this site', 'subaru-parts-inventory' ) . '</button>'
 				. '<button type="button" class="btn faint mini" data-action="img-stop" hidden>' . esc_html__( 'Stop', 'subaru-parts-inventory' ) . '</button>'
 				. '<button type="button" class="btn faint mini" data-action="img-retry" hidden>' . esc_html__( 'Retry failed', 'subaru-parts-inventory' ) . '</button></div></div>';
-			$html .= '<div class="tool-box" data-box-tool><h3>' . esc_html__( 'Clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</h3>'
-				. '<p class="hint">' . esc_html__( 'Removes all box codes, merges duplicate categories, deletes empty leftover categories, files every part into its catalog diagram and creates a fresh, unique box scheme. Box labels must be reprinted afterwards.', 'subaru-parts-inventory' ) . '</p>'
-				. '<div class="warn" data-box-dupes hidden></div><div class="svc-pick box-mode">';
-			foreach ( SPS_Boxes::modes() as $k => $label ) {
-				$html .= '<label' . ( get_option( 'sps_box_mode', 'sections' ) === $k ? ' class="on"' : '' ) . '><input type="radio" name="sps_box_mode" value="' . esc_attr( $k ) . '"' . checked( get_option( 'sps_box_mode', 'sections' ), $k, false ) . '>' . esc_html( $label ) . '</label>';
-			}
-			$html .= '</div><label class="checkline"><input type="checkbox" data-box-opt="delete_empty" checked> ' . esc_html__( 'Delete empty categories that are not from the Subaru catalog', 'subaru-parts-inventory' ) . '</label>'
-				. '<label class="checkline"><input type="checkbox" data-box-opt="unbox"> ' . esc_html__( 'Mark all boxed parts as "Not boxed yet" (I will re-sort them)', 'subaru-parts-inventory' ) . '</label>'
-				. '<div class="row-btns"><button type="button" class="btn danger mini" data-action="box-cleanup">' . esc_html__( 'Clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</button></div><div class="hint" data-box-report></div></div>';
 		}
 		$html .= '<div class="tool-links">';
 		foreach ( $links as $key => $label ) {
@@ -533,7 +525,6 @@ class SPS_App {
 			'msrp'         => __( 'List price (US)', 'subaru-parts-inventory' ),
 			'official'     => __( 'Official name', 'subaru-parts-inventory' ),
 			'otherMY'      => __( 'listed for other model years – check fitment', 'subaru-parts-inventory' ),
-			'inStock'      => __( 'in stock', 'subaru-parts-inventory' ),
 			'have'         => __( 'have', 'subaru-parts-inventory' ),
 			'addThis'      => __( '+ Add', 'subaru-parts-inventory' ),
 			'backToList'   => __( '← All diagrams', 'subaru-parts-inventory' ),

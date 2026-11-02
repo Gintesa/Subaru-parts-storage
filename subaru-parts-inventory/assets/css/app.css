@@ -417,3 +417,10 @@ html.sps-lb-open { overflow: hidden; }
 #sps-app .box-mode { margin-top: 10px; }
 #sps-app .progress { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-top: 10px; }
 #sps-app .progress i { display: block; height: 100%; width: 0; background: var(--neon); box-shadow: 0 0 8px var(--neon-glow); transition: width .3s; }
+
+#sps-app details.box-setup { margin: 8px 0 14px; border: 1px dashed rgba(232, 255, 58, .35); border-radius: 10px; padding: 8px 12px; }
+#sps-app details.box-setup summary { cursor: pointer; color: var(--neon); font-weight: 700; font-size: 13px; }
+#sps-app details.box-setup .tool-box { margin: 10px 0 4px; }
+
+#sps-app .box-group { grid-column: 1 / -1; margin: 14px 0 0; font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--silver-dim); border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+#sps-app .box-group:first-child { margin-top: 0; }
