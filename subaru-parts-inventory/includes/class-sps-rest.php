@@ -16,6 +16,7 @@ class SPS_REST {
 
 	public static function init() {
 		add_action( 'rest_api_init', array( __CLASS__, 'routes' ) );
+		add_action( 'rest_api_init', array( __CLASS__, 'manage_routes' ) );
 	}
 
 	public static function routes() {
@@ -31,11 +32,14 @@ class SPS_REST {
 					'category'  => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
 					'condition' => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
 					'fitment'   => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
-					'orderby'   => array( 'type' => 'string', 'enum' => array( 'newest', 'part_number', 'name', 'price' ), 'default' => 'newest' ),
+					'orderby'   => array( 'type' => 'string', 'enum' => array( 'newest', 'oldest', 'part_number', 'name', 'price', 'updated' ), 'default' => 'newest' ),
 					'page'      => array( 'type' => 'integer', 'default' => 1, 'minimum' => 1 ),
 					'per_page'  => array( 'type' => 'integer', 'minimum' => 1, 'maximum' => 100 ),
 					'format'    => array( 'type' => 'string', 'enum' => array( 'json', 'html' ), 'default' => 'json' ),
 					'view'      => array( 'type' => 'string', 'enum' => array( 'grid', 'table' ), 'default' => 'grid' ),
+					'context'   => array( 'type' => 'string', 'enum' => array( 'view', 'manage' ), 'default' => 'view' ),
+					'status'    => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_key', 'default' => 'instock' ),
+					'label'     => array( 'type' => 'string', 'enum' => array( '', 'yes', 'no' ), 'default' => '' ),
 				),
 			)
 		);
@@ -111,6 +115,399 @@ class SPS_REST {
 		);
 	}
 
+	/**
+	 * Write / management routes used by the front-end parts app.
+	 */
+	public static function manage_routes() {
+		register_rest_route(
+			self::NS,
+			'/parts',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'save_part' ),
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/parts/(?P<id>\d+)',
+			array(
+				array(
+					'methods'             => WP_REST_Server::EDITABLE,
+					'callback'            => array( __CLASS__, 'save_part' ),
+					'permission_callback' => static function ( $request ) {
+						return current_user_can( 'edit_post', (int) $request['id'] );
+					},
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( __CLASS__, 'trash_part' ),
+					'permission_callback' => static function ( $request ) {
+						return current_user_can( 'delete_post', (int) $request['id'] );
+					},
+				),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/parts/(?P<id>\d+)/photos',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'upload_photos' ),
+				'permission_callback' => static function ( $request ) {
+					return current_user_can( 'edit_post', (int) $request['id'] ) && current_user_can( 'upload_files' );
+				},
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/parts/(?P<id>\d+)/photos/(?P<att>\d+)',
+			array(
+				'methods'             => WP_REST_Server::DELETABLE,
+				'callback'            => array( __CLASS__, 'remove_photo' ),
+				'permission_callback' => static function ( $request ) {
+					return current_user_can( 'edit_post', (int) $request['id'] );
+				},
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/stats',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'stats' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/boxes',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'boxes' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/boxes/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( __CLASS__, 'save_box' ),
+				'permission_callback' => static function () {
+					return current_user_can( SPS_CAP );
+				},
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/activity',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'activity' ),
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+			)
+		);
+	}
+
+	/**
+	 * Create or update a part from the front-end form.
+	 */
+	public static function save_part( WP_REST_Request $request ) {
+		$id     = (int) $request['id'];
+		$params = $request->get_json_params();
+		if ( ! is_array( $params ) || ! $params ) {
+			$params = $request->get_body_params();
+		}
+		$params = is_array( $params ) ? $params : array();
+		if ( $id && SPS_PT !== get_post_type( $id ) ) {
+			return new WP_Error( 'sps_not_found', __( 'Part not found.', 'subaru-parts-inventory' ), array( 'status' => 404 ) );
+		}
+		$name = isset( $params['name'] ) ? sanitize_text_field( $params['name'] ) : '';
+		$pn   = isset( $params['part_number'] ) ? sps_sanitize_field( 'part_number', $params['part_number'] ) : '';
+		if ( ! $id && '' === $name && '' === $pn ) {
+			return new WP_Error( 'sps_missing', __( 'Enter a part number or a name.', 'subaru-parts-inventory' ), array( 'status' => 400 ) );
+		}
+		$postarr = array( 'post_type' => SPS_PT );
+		if ( '' !== $name || ! $id ) {
+			$postarr['post_title'] = '' !== $name ? $name : $pn;
+		}
+		if ( isset( $params['description'] ) ) {
+			$postarr['post_content'] = wp_kses_post( $params['description'] );
+		}
+		if ( ! $id ) {
+			$postarr['post_status'] = current_user_can( 'publish_sps_parts' ) ? 'publish' : 'pending';
+			$result                 = wp_insert_post( $postarr, true );
+		} else {
+			$postarr['ID'] = $id;
+			$result        = wp_update_post( $postarr, true );
+		}
+		if ( is_wp_error( $result ) ) {
+			$result->add_data( array( 'status' => 500 ) );
+			return $result;
+		}
+		$id      = (int) $result;
+		$created = ! $request['id'];
+
+		$before = sps_meta( $id, 'condition' );
+		$meta   = array_intersect_key( $params, sps_meta_fields() );
+		if ( array_key_exists( 'condition_flags', $params ) && ! is_array( $params['condition_flags'] ) && '' === (string) $params['condition_flags'] ) {
+			$meta['condition_flags'] = array();
+		}
+		sps_save_part_meta( $id, $meta );
+
+		if ( array_key_exists( 'category_id', $params ) ) {
+			$term_id = absint( $params['category_id'] );
+			if ( ! $term_id || ! term_exists( $term_id, SPS_TAX_CAT ) ) {
+				$term_id = SPS_Categories::term_from_path( 'To Sort (Unidentified)' );
+			}
+			wp_set_object_terms( $id, $term_id ? array( $term_id ) : array(), SPS_TAX_CAT );
+		} elseif ( $created ) {
+			$term_id = SPS_Categories::term_from_path( 'To Sort (Unidentified)' );
+			wp_set_object_terms( $id, $term_id ? array( $term_id ) : array(), SPS_TAX_CAT );
+		}
+		if ( array_key_exists( 'fitment', $params ) ) {
+			$fit = is_array( $params['fitment'] ) ? $params['fitment'] : explode( ',', (string) $params['fitment'] );
+			wp_set_object_terms( $id, array_values( array_filter( array_map( 'trim', array_map( 'sanitize_text_field', $fit ) ) ) ), SPS_TAX_FIT );
+		}
+		if ( ! empty( $params['note'] ) ) {
+			sps_add_inspection( $id, $params['note'], isset( $meta['condition'] ) ? sps_sanitize_field( 'condition', $meta['condition'] ) : '' );
+		} elseif ( $before && isset( $meta['condition'] ) && $before !== $meta['condition'] ) {
+			$c = sps_conditions();
+			$n = sps_sanitize_field( 'condition', $meta['condition'] );
+			/* translators: 1: old grade, 2: new grade */
+			sps_add_inspection( $id, sprintf( __( 'Condition changed: %1$s → %2$s', 'subaru-parts-inventory' ), $c[ $before ]['short'] ?? $before, $c[ $n ]['short'] ?? $n ), $n );
+		} elseif ( $created ) {
+			sps_add_inspection( $id, __( 'Added to inventory.', 'subaru-parts-inventory' ), sps_meta( $id, 'condition' ) );
+		}
+		sps_refresh_derived_meta( $id );
+
+		$data              = sps_part_data( $id, 'admin' );
+		$data['created']   = $created;
+		$data['print_url'] = SPS_Labels::print_url( array( $id ) );
+		return rest_ensure_response( $data );
+	}
+
+	public static function trash_part( WP_REST_Request $request ) {
+		$id = (int) $request['id'];
+		if ( SPS_PT !== get_post_type( $id ) ) {
+			return new WP_Error( 'sps_not_found', __( 'Part not found.', 'subaru-parts-inventory' ), array( 'status' => 404 ) );
+		}
+		wp_trash_post( $id );
+		return rest_ensure_response( array( 'trashed' => true, 'id' => $id ) );
+	}
+
+	/**
+	 * Upload one or more photos (multipart field "photos[]"). First photo becomes the main photo if none is set.
+	 */
+	public static function upload_photos( WP_REST_Request $request ) {
+		$id = (int) $request['id'];
+		if ( SPS_PT !== get_post_type( $id ) ) {
+			return new WP_Error( 'sps_not_found', __( 'Part not found.', 'subaru-parts-inventory' ), array( 'status' => 404 ) );
+		}
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$files = $request->get_file_params();
+		$list  = array();
+		foreach ( $files as $field ) {
+			if ( is_array( $field['name'] ) ) {
+				foreach ( array_keys( $field['name'] ) as $i ) {
+					$list[] = array(
+						'name'     => $field['name'][ $i ],
+						'type'     => $field['type'][ $i ],
+						'tmp_name' => $field['tmp_name'][ $i ],
+						'error'    => $field['error'][ $i ],
+						'size'     => $field['size'][ $i ],
+					);
+				}
+			} else {
+				$list[] = $field;
+			}
+		}
+		if ( ! $list ) {
+			return new WP_Error( 'sps_no_files', __( 'No photos received.', 'subaru-parts-inventory' ), array( 'status' => 400 ) );
+		}
+		$gallery = array_filter( array_map( 'intval', explode( ',', (string) sps_meta( $id, 'gallery' ) ) ) );
+		$errors  = array();
+		foreach ( $list as $file ) {
+			$type = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
+			if ( empty( $type['type'] ) || 0 !== strpos( $type['type'], 'image/' ) ) {
+				$errors[] = $file['name'] . ': ' . __( 'not an image.', 'subaru-parts-inventory' );
+				continue;
+			}
+			$att = media_handle_sideload( $file, $id, get_the_title( $id ) );
+			if ( is_wp_error( $att ) ) {
+				$errors[] = $file['name'] . ': ' . $att->get_error_message();
+				continue;
+			}
+			if ( ! has_post_thumbnail( $id ) ) {
+				set_post_thumbnail( $id, $att );
+			} else {
+				$gallery[] = (int) $att;
+			}
+		}
+		update_post_meta( $id, '_sps_gallery', implode( ',', array_unique( $gallery ) ) );
+		$data           = sps_part_data( $id, 'admin' );
+		$data['errors'] = $errors;
+		return rest_ensure_response( $data );
+	}
+
+	public static function remove_photo( WP_REST_Request $request ) {
+		$id  = (int) $request['id'];
+		$att = (int) $request['att'];
+		if ( (int) get_post_thumbnail_id( $id ) === $att ) {
+			delete_post_thumbnail( $id );
+			$gallery = array_filter( array_map( 'intval', explode( ',', (string) sps_meta( $id, 'gallery' ) ) ) );
+			if ( $gallery ) {
+				set_post_thumbnail( $id, array_shift( $gallery ) );
+				update_post_meta( $id, '_sps_gallery', implode( ',', $gallery ) );
+			}
+		} else {
+			$gallery = array_diff( array_filter( array_map( 'intval', explode( ',', (string) sps_meta( $id, 'gallery' ) ) ) ), array( $att ) );
+			update_post_meta( $id, '_sps_gallery', implode( ',', $gallery ) );
+		}
+		return rest_ensure_response( sps_part_data( $id, 'admin' ) );
+	}
+
+	public static function stats() {
+		if ( current_user_can( SPS_EDIT_CAP ) ) {
+			$s = SPS_Admin::stats();
+			return rest_ensure_response(
+				array(
+					'manager'    => true,
+					'parts'      => $s['parts'],
+					'items'      => $s['items'],
+					'new'        => $s['by_group']['new'],
+					'used'       => $s['by_group']['used'] + $s['by_group']['core'],
+					'value'      => $s['value'],
+					'value_fmt'  => sps_money( $s['value'] ),
+					'cost_fmt'   => sps_money( $s['cost'] ),
+					'unlabelled' => $s['unlabelled'],
+					'no_photo'   => $s['no_photo'],
+					'by_status'  => $s['by_status'],
+				)
+			);
+		}
+		$c = sps_public_counts();
+		return rest_ensure_response( array( 'manager' => false, 'parts' => $c['all'], 'new' => $c['new'], 'used' => $c['used'] ) );
+	}
+
+	/**
+	 * Storage boxes: categories with their own box code, plus part counts per box.
+	 */
+	public static function boxes() {
+		$manager = current_user_can( SPS_EDIT_CAP );
+		$counts  = array();
+		$args    = array(
+			'post_type'      => SPS_PT,
+			'fields'         => 'ids',
+			'posts_per_page' => -1,
+			'no_found_rows'  => true,
+		);
+		if ( $manager ) {
+			$args['post_status'] = array( 'publish', 'draft', 'private', 'pending' );
+			$args['meta_query']  = array( array( 'key' => '_sps_status', 'value' => array_keys( wp_list_filter( sps_statuses(), array( 'in_stock' => true ) ) ), 'compare' => 'IN' ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+		} else {
+			$args['post_status'] = 'publish';
+			$args['meta_key']    = '_sps_visible'; // phpcs:ignore WordPress.DB.SlowDBQuery
+			$args['meta_value']  = 1; // phpcs:ignore WordPress.DB.SlowDBQuery
+		}
+		foreach ( get_posts( $args ) as $pid ) {
+			$box = sps_part_box( $pid );
+			$key = '' !== $box['code'] ? $box['code'] : '—';
+			$counts[ $key ] = isset( $counts[ $key ] ) ? $counts[ $key ] + 1 : 1;
+		}
+		$out   = array();
+		$terms = get_terms( array( 'taxonomy' => SPS_TAX_CAT, 'hide_empty' => false, 'meta_key' => 'sps_box_code', 'meta_compare' => '!=', 'meta_value' => '' ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+		foreach ( (array) $terms as $term ) {
+			$code     = (string) get_term_meta( $term->term_id, 'sps_box_code', true );
+			$children = array();
+			foreach ( get_terms( array( 'taxonomy' => SPS_TAX_CAT, 'parent' => $term->term_id, 'hide_empty' => false ) ) as $child ) {
+				$own = (string) get_term_meta( $child->term_id, 'sps_box_code', true );
+				if ( '' === $own || $own === $code ) {
+					$children[] = html_entity_decode( $child->name );
+				}
+			}
+			$out[] = array(
+				'id'        => $term->term_id,
+				'slug'      => $term->slug,
+				'code'      => $code,
+				'name'      => html_entity_decode( $term->name ),
+				'path'      => html_entity_decode( sps_category_path( $term ) ),
+				'location'  => $manager || sps_setting( 'show_location' ) ? (string) get_term_meta( $term->term_id, 'sps_box_location', true ) : '',
+				'count'     => isset( $counts[ $code ] ) ? $counts[ $code ] : 0,
+				'children'  => $children,
+				'order'     => (int) get_term_meta( $term->term_id, 'sps_order', true ),
+				'depth'     => count( get_ancestors( $term->term_id, SPS_TAX_CAT, 'taxonomy' ) ),
+				'label_url' => $manager ? SPS_Labels::print_url( array( $term->term_id ), 'box' ) : '',
+			);
+		}
+		usort(
+			$out,
+			static function ( $a, $b ) {
+				return strnatcasecmp( $a['code'], $b['code'] );
+			}
+		);
+		return rest_ensure_response( $out );
+	}
+
+	public static function save_box( WP_REST_Request $request ) {
+		$id   = (int) $request['id'];
+		$term = get_term( $id, SPS_TAX_CAT );
+		if ( ! $term || is_wp_error( $term ) ) {
+			return new WP_Error( 'sps_not_found', __( 'Category not found.', 'subaru-parts-inventory' ), array( 'status' => 404 ) );
+		}
+		if ( null !== $request['code'] ) {
+			update_term_meta( $id, 'sps_box_code', strtoupper( sanitize_text_field( $request['code'] ) ) );
+		}
+		if ( null !== $request['location'] ) {
+			update_term_meta( $id, 'sps_box_location', sanitize_text_field( $request['location'] ) );
+		}
+		sps_flush_caches();
+		return self::boxes();
+	}
+
+	/**
+	 * Recent condition-log entries across parts.
+	 */
+	public static function activity() {
+		$posts = get_posts(
+			array(
+				'post_type'      => SPS_PT,
+				'post_status'    => array( 'publish', 'draft', 'private', 'pending' ),
+				'posts_per_page' => 40,
+				'orderby'        => 'modified',
+				'order'          => 'DESC',
+			)
+		);
+		$items = array();
+		foreach ( $posts as $p ) {
+			foreach ( array_slice( sps_get_inspections( $p->ID ), 0, 5 ) as $entry ) {
+				$items[] = array(
+					'date'        => $entry['date'],
+					'note'        => $entry['note'],
+					'condition'   => $entry['condition'],
+					'user'        => $entry['user'],
+					'part_id'     => $p->ID,
+					'part_number' => (string) sps_meta( $p->ID, 'part_number' ),
+					'sku'         => (string) sps_meta( $p->ID, 'sku' ),
+					'name'        => html_entity_decode( get_the_title( $p ), ENT_QUOTES ),
+					'modified'    => $p->post_modified,
+				);
+			}
+		}
+		usort(
+			$items,
+			static function ( $a, $b ) {
+				$c = strcmp( $b['date'], $a['date'] );
+				return 0 !== $c ? $c : strcmp( $b['modified'], $a['modified'] );
+			}
+		);
+		return rest_ensure_response( array_slice( $items, 0, 30 ) );
+	}
+
 	public static function can_manage() {
 		return current_user_can( SPS_EDIT_CAP );
 	}
@@ -134,16 +531,30 @@ class SPS_REST {
 				'per_page'  => (int) sps_setting( 'per_page' ),
 			)
 		);
-		$q = array(
+		$manage = ! empty( $args['manage'] );
+		$q      = array(
 			'post_type'      => SPS_PT,
-			'post_status'    => 'publish',
+			'post_status'    => $manage ? array( 'publish', 'draft', 'private', 'pending' ) : 'publish',
 			'posts_per_page' => max( 1, min( 100, (int) $args['per_page'] ) ),
 			'paged'          => max( 1, (int) $args['page'] ),
-			'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery
-				'visible' => array( 'key' => '_sps_visible', 'value' => 1 ),
-			),
+			'meta_query'     => array(), // phpcs:ignore WordPress.DB.SlowDBQuery
 			'tax_query'      => array(), // phpcs:ignore WordPress.DB.SlowDBQuery
 		);
+		if ( ! $manage ) {
+			$q['meta_query']['visible'] = array( 'key' => '_sps_visible', 'value' => 1 );
+		} else {
+			$status = isset( $args['status'] ) ? (string) $args['status'] : 'instock';
+			if ( 'instock' === $status || '' === $status ) {
+				$q['meta_query']['status'] = array( 'key' => '_sps_status', 'value' => array_keys( wp_list_filter( sps_statuses(), array( 'in_stock' => true ) ) ), 'compare' => 'IN' );
+			} elseif ( array_key_exists( $status, sps_statuses() ) ) {
+				$q['meta_query']['status'] = array( 'key' => '_sps_status', 'value' => $status );
+			}
+			if ( ! empty( $args['label'] ) ) {
+				$q['meta_query']['label'] = 'yes' === $args['label']
+					? array( 'key' => '_sps_label_printed', 'compare' => 'EXISTS' )
+					: array( 'key' => '_sps_label_printed', 'compare' => 'NOT EXISTS' );
+			}
+		}
 
 		if ( '' !== $args['category'] ) {
 			$field = ctype_digit( (string) $args['category'] ) ? 'term_id' : 'slug';
@@ -171,7 +582,7 @@ class SPS_REST {
 			$text_ids = get_posts(
 				array(
 					'post_type'      => SPS_PT,
-					'post_status'    => 'publish',
+					'post_status'    => $q['post_status'],
 					's'              => $term,
 					'fields'         => 'ids',
 					'posts_per_page' => 1000,
@@ -194,6 +605,14 @@ class SPS_REST {
 				$q['meta_query']['price'] = array( 'key' => '_sps_sale_price', 'type' => 'DECIMAL(10,2)', 'compare' => 'EXISTS' );
 				$q['orderby']             = array( 'price' => 'ASC' );
 				break;
+			case 'oldest':
+				$q['orderby'] = 'date';
+				$q['order']   = 'ASC';
+				break;
+			case 'updated':
+				$q['orderby'] = 'modified';
+				$q['order']   = 'DESC';
+				break;
 			default:
 				$q['orderby'] = 'date';
 				$q['order']   = 'DESC';
@@ -211,6 +630,12 @@ class SPS_REST {
 			'page'      => (int) $request['page'],
 			'per_page'  => $request['per_page'] ? (int) $request['per_page'] : (int) sps_setting( 'per_page' ),
 		);
+		$manage = 'manage' === $request['context'] && current_user_can( SPS_EDIT_CAP );
+		if ( $manage ) {
+			$args['manage'] = true;
+			$args['status'] = (string) $request['status'];
+			$args['label']  = (string) $request['label'];
+		}
 		$query = self::query( $args );
 		$data  = array(
 			'total' => (int) $query->found_posts,
@@ -223,8 +648,8 @@ class SPS_REST {
 			$data['summary']    = SPS_Frontend::render_summary( $query );
 		} else {
 			$data['items'] = array_map(
-				static function ( $post ) {
-					return sps_part_data( $post->ID );
+				static function ( $post ) use ( $manage ) {
+					return sps_part_data( $post->ID, $manage ? 'admin' : 'public' );
 				},
 				$query->posts
 			);

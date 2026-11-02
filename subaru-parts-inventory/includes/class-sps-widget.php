@@ -62,7 +62,7 @@ class SPS_Widget extends WP_Widget {
 		}
 
 		if ( $i['stats'] ) {
-			$counts = $this->public_counts();
+			$counts = sps_public_counts();
 			echo '<ul class="sps-widget__stats">';
 			echo '<li><strong>' . esc_html( number_format_i18n( $counts['all'] ) ) . '</strong> ' . esc_html__( 'parts', 'subaru-parts-inventory' ) . '</li>';
 			echo '<li><strong>' . esc_html( number_format_i18n( $counts['new'] ) ) . '</strong> ' . esc_html__( 'new', 'subaru-parts-inventory' ) . '</li>';
@@ -115,23 +115,6 @@ class SPS_Widget extends WP_Widget {
 		}
 		echo '</div>';
 		echo $args['after_widget']; // phpcs:ignore WordPress.Security.EscapeOutput
-	}
-
-	private function public_counts() {
-		$cached = get_transient( 'sps_public_counts' );
-		if ( is_array( $cached ) ) {
-			return $cached;
-		}
-		$out = array( 'all' => 0, 'new' => 0, 'used' => 0 );
-		$ids = get_posts( array( 'post_type' => SPS_PT, 'post_status' => 'publish', 'fields' => 'ids', 'posts_per_page' => -1, 'meta_key' => '_sps_visible', 'meta_value' => 1 ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
-		$c   = sps_conditions();
-		foreach ( $ids as $id ) {
-			$out['all']++;
-			$g = $c[ sps_meta( $id, 'condition', 'used_b' ) ]['group'] ?? 'used';
-			$out[ 'new' === $g ? 'new' : 'used' ]++;
-		}
-		set_transient( 'sps_public_counts', $out, 10 * MINUTE_IN_SECONDS );
-		return $out;
 	}
 
 	public function form( $instance ) {

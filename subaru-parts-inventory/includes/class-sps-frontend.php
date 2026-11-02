@@ -65,6 +65,7 @@ class SPS_Frontend {
 				'api_version'     => 2,
 				'editor_script'   => 'sps-block',
 				'style'           => 'sps-frontend',
+				'editor_style'    => 'sps-app',
 				'render_callback' => array( __CLASS__, 'shortcode' ),
 				'attributes'      => array(
 					'category'    => array( 'type' => 'string', 'default' => '' ),
@@ -73,6 +74,8 @@ class SPS_Frontend {
 					'view'        => array( 'type' => 'string', 'default' => 'grid' ),
 					'filters'     => array( 'type' => 'boolean', 'default' => true ),
 					'orderby'     => array( 'type' => 'string', 'default' => 'newest' ),
+					'layout'      => array( 'type' => 'string', 'default' => 'app' ),
+					'title'       => array( 'type' => 'string', 'default' => '' ),
 				),
 			)
 		);
@@ -92,10 +95,18 @@ class SPS_Frontend {
 				'view'      => 'grid',
 				'filters'   => true,
 				'orderby'   => 'newest',
+				'layout'    => 'app',
+				'title'     => '',
 			),
 			is_array( $atts ) ? $atts : array(),
 			'subaru_parts'
 		);
+		if ( 'grid' !== $atts['layout'] && 'table' !== $atts['layout'] ) {
+			return SPS_App::render( $atts );
+		}
+		if ( 'table' === $atts['layout'] ) {
+			$atts['view'] = 'table';
+		}
 		$show_filters = ! in_array( (string) $atts['filters'], array( '0', 'no', 'false', '' ), true ) || true === $atts['filters'];
 		$per_page     = (int) $atts['per_page'] ? (int) $atts['per_page'] : (int) sps_setting( 'per_page' );
 		$view         = 'table' === $atts['view'] ? 'table' : 'grid';

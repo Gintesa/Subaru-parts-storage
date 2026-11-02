@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Subaru Parts Inventory
  * Description:       Inventory system for new and used Subaru parts: Subaru-catalog categories mapped to storage boxes, condition grading and inspection notes, printable part and box labels with QR codes and barcodes, scan lookup, CSV import/export, and a public catalogue block, shortcode and widget.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            gintesa
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SPS_VERSION', '1.0.0' );
+define( 'SPS_VERSION', '1.1.0' );
 define( 'SPS_FILE', __FILE__ );
 define( 'SPS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPS_URL', plugin_dir_url( __FILE__ ) );
@@ -26,6 +26,7 @@ require_once SPS_DIR . 'includes/class-sps-admin.php';
 require_once SPS_DIR . 'includes/class-sps-labels.php';
 require_once SPS_DIR . 'includes/class-sps-rest.php';
 require_once SPS_DIR . 'includes/class-sps-frontend.php';
+require_once SPS_DIR . 'includes/class-sps-app.php';
 require_once SPS_DIR . 'includes/class-sps-widget.php';
 require_once SPS_DIR . 'includes/class-sps-import-export.php';
 require_once SPS_DIR . 'includes/class-sps-settings.php';
@@ -55,6 +56,7 @@ add_action(
 		SPS_Labels::init();
 		SPS_REST::init();
 		SPS_Frontend::init();
+		SPS_App::init();
 		SPS_Widget::init();
 		SPS_Import_Export::init();
 		SPS_Settings::init();

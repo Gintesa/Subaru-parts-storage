@@ -544,7 +544,7 @@ function sps_part_data( $post_id, $context = 'public' ) {
 		'part_number'     => (string) sps_meta( $post_id, 'part_number' ),
 		'alt_numbers'     => (string) sps_meta( $post_id, 'alt_numbers' ),
 		'epc_ref'         => (string) sps_meta( $post_id, 'epc_ref' ),
-		'category'        => $category ? array( 'id' => $category->term_id, 'name' => $category->name, 'path' => sps_category_path( $category ), 'slug' => $category->slug ) : null,
+		'category'        => $category ? array( 'id' => $category->term_id, 'name' => html_entity_decode( $category->name, ENT_QUOTES ), 'path' => html_entity_decode( sps_category_path( $category ), ENT_QUOTES ), 'slug' => $category->slug ) : null,
 		'fitment'         => is_wp_error( $fitment ) ? array() : $fitment,
 		'condition'       => $condition,
 		'condition_label' => isset( $conditions[ $condition ] ) ? $conditions[ $condition ]['label'] : '',
@@ -730,4 +730,71 @@ function sps_category_counts() {
 	}
 	set_transient( 'sps_category_counts', $counts, DAY_IN_SECONDS );
 	return $counts;
+}
+
+/**
+ * Public (visible) part counts: all / new / used.
+ *
+ * @return array{all:int,new:int,used:int}
+ */
+function sps_public_counts() {
+	$cached = get_transient( 'sps_public_counts' );
+	if ( is_array( $cached ) ) {
+		return $cached;
+	}
+	$out = array( 'all' => 0, 'new' => 0, 'used' => 0 );
+	$ids = get_posts( array( 'post_type' => SPS_PT, 'post_status' => 'publish', 'fields' => 'ids', 'posts_per_page' => -1, 'meta_key' => '_sps_visible', 'meta_value' => 1 ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+	$c   = sps_conditions();
+	foreach ( $ids as $id ) {
+		$out['all']++;
+		$g = $c[ sps_meta( $id, 'condition', 'used_b' ) ]['group'] ?? 'used';
+		$out[ 'new' === $g ? 'new' : 'used' ]++;
+	}
+	set_transient( 'sps_public_counts', $out, 10 * MINUTE_IN_SECONDS );
+	return $out;
+}
+
+/**
+ * Categories as an ordered flat tree (for selects in the front-end app).
+ *
+ * @return array<int,array{id:int,name:string,slug:string,parent:int,depth:int,box:string,location:string}>
+ */
+function sps_category_tree() {
+	$terms = get_terms( array( 'taxonomy' => SPS_TAX_CAT, 'hide_empty' => false ) );
+	if ( is_wp_error( $terms ) ) {
+		return array();
+	}
+	$by_parent = array();
+	foreach ( $terms as $term ) {
+		$by_parent[ $term->parent ][] = $term;
+	}
+	foreach ( $by_parent as &$children ) {
+		usort(
+			$children,
+			static function ( $a, $b ) {
+				$oa = (int) get_term_meta( $a->term_id, 'sps_order', true );
+				$ob = (int) get_term_meta( $b->term_id, 'sps_order', true );
+				return $oa === $ob ? strcasecmp( $a->name, $b->name ) : $oa - $ob;
+			}
+		);
+	}
+	unset( $children );
+	$out  = array();
+	$walk = static function ( $parent, $depth ) use ( &$walk, &$out, $by_parent ) {
+		foreach ( isset( $by_parent[ $parent ] ) ? $by_parent[ $parent ] : array() as $term ) {
+			$box   = sps_term_box( $term );
+			$out[] = array(
+				'id'       => (int) $term->term_id,
+				'name'     => html_entity_decode( $term->name, ENT_QUOTES ),
+				'slug'     => $term->slug,
+				'parent'   => (int) $term->parent,
+				'depth'    => $depth,
+				'box'      => $box['code'],
+				'location' => $box['location'],
+			);
+			$walk( $term->term_id, $depth + 1 );
+		}
+	};
+	$walk( 0, 0 );
+	return $out;
 }

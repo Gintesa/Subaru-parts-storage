@@ -27,7 +27,9 @@
 			per_page: { type: 'number', default: 0 },
 			view: { type: 'string', default: 'grid' },
 			filters: { type: 'boolean', default: true },
-			orderby: { type: 'string', default: 'newest' }
+			orderby: { type: 'string', default: 'newest' },
+			layout: { type: 'string', default: 'app' },
+			title: { type: 'string', default: '' }
 		},
 		edit: function (props) {
 			var a = props.attributes;
@@ -41,6 +43,15 @@
 					el(
 						PanelBody,
 						{ title: __('Catalogue settings', 'subaru-parts-inventory'), initialOpen: true },
+						el(SelectControl, {
+							label: __('Design', 'subaru-parts-inventory'),
+							value: a.layout,
+							options: [
+								{ value: 'app', label: __('Parts app (dark; scanner & add part for managers)', 'subaru-parts-inventory') },
+								{ value: 'grid', label: __('Simple catalogue (theme styles)', 'subaru-parts-inventory') }
+							],
+							onChange: function (v) { set({ layout: v }); }
+						}),
 						el(SelectControl, {
 							label: __('Start with category', 'subaru-parts-inventory'),
 							value: a.category,

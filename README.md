@@ -21,6 +21,24 @@ The plugin is in [`subaru-parts-inventory/`](subaru-parts-inventory/).
 | **REST API** | `GET /wp-json/subaru-parts/v1/parts?search=&category=&condition=used`, `/parts/<id>`, `/categories`. Logged-in managers also get `/lookup?code=` and `POST /parts/<id>/quick`. |
 | **Roles** | Admins get full access. A "Parts Manager" role is added for a helper who should only manage parts. |
 
+## The parts page (front-end app)
+
+`[subaru_parts]` (or the **Subaru Parts Catalogue** block) renders a single-page app styled like the Gintesa *Subaru Tracker* page. It uses a dark surface, a neon `#E8FF3A` accent, Inter and JetBrains Mono, a sticky section nav, a hero with a stats strip, and collapsible sections.
+
+| Section | Visitors | Logged-in parts managers |
+|---|---|---|
+| **Scanner** | – | The phone or laptop camera reads part and box label QR codes. It uses the native barcode reader where the browser has one, and a bundled QR decoder (jsQR) everywhere else, including iPhone. You can also type a code or use a USB/Bluetooth scanner. A scanned part opens a card where you can change the quantity ±1, set the status, add a condition note, edit, print the label or trash the part. Scanning a box label lists everything in that box. An unknown code offers **Add as new part**. |
+| **Add a part** | – | One form for everything: part number with a duplicate warning (a scan button reads the barcode on the Subaru box), name, catalog category with the box it goes into, condition grade and checklist chips, notes, quantity, status, mileage, donor car and fitment. A collapsible panel holds the extra numbers, storage, prices and description. You can take or attach photos; they are shrunk before upload. After saving you get the label ID, the target box and a **Print label** button, and the form stays ready for the next part in the same category. **Edit** on any part reopens this form with its data. |
+| **Inventory** | Searchable list (New/Used/Core chips, category, sort) with an expandable detail for each part | The same list plus a status filter (including sold/installed parts), quick actions, condition log and trash |
+| **Storage boxes** | Box cards with part counts (tap to filter the list) | Plus editing the box code and location, and a box-label link |
+| **Labels to print** | – | Queue of parts that have no label yet. Pick a label format and click *Print selected*. |
+| **Activity** | – | Recent condition-log entries across all parts |
+| **Tools** | – | Counts by status, and links to the admin dashboard, bulk list, categories, import/export and settings |
+
+Attributes: `[subaru_parts title="Parts storage" category="engine-auxiliaries" condition="used" per_page="30"]`. Use `layout="grid"` for the earlier simple catalogue. Colours are CSS variables on `#sps-app` (`--neon`, `--bg`, `--surface`, …), so you can override them in *Customizer → Additional CSS*.
+
+The camera only works on HTTPS pages and asks for camera permission the first time.
+
 ## Installation
 
 1. Zip the `subaru-parts-inventory` folder (or copy it to `wp-content/plugins/`).
