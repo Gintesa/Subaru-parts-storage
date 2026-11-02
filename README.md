@@ -21,6 +21,16 @@ The plugin is in [`subaru-parts-inventory/`](subaru-parts-inventory/).
 | **REST API** | `GET /wp-json/subaru-parts/v1/parts?search=&category=&condition=used`, `/parts/<id>`, `/categories`. Logged-in managers also get `/lookup?code=` and `POST /parts/<id>/quick`. |
 | **Roles** | Admins get full access. A "Parts Manager" role is added for a helper who should only manage parts. |
 
+## Official Subaru catalog (bundled)
+
+The plugin ships the complete parts.subaru.com catalog for the 2017 WRX 2.0L 6MT Limited (`data/subaru-2017-wrx-library.json.gz`): 3,495 OEM part numbers on 445 diagrams in 12 categories, plus 69 genuine accessories. It installs itself on the first admin page load after activating or updating the plugin.
+
+- **Categories = parts.subaru.com.** The 12 top-level categories are your boxes (BOX-EN Engine and Cooling, BOX-MT, BOX-DD, BOX-SB, BOX-ST, BOX-EL, BOX-BD, BOX-DR, BOX-IN, BOX-AC, BOX-MA Maintenance, BOX-AT, BOX-AX Accessories). Each diagram is a sub-category. Parts from earlier versions are moved over automatically, and unused old categories are removed.
+- **Where a part goes:** a part listed on several diagrams is filed under the real diagram rather than the Maintenance shortcut list, preferring diagrams that apply to MY2017. Diagrams for other model years are marked "other MY".
+- **In the app:** the *Subaru catalog* section lets you browse diagrams, see what you already have, and tap **+ Add**. Typing a name in *Add a part* searches the catalog. Part cards show the official name, notes, US list price, catalog picture and every diagram with its callout number.
+- **Images:** upload the `subaru_2017_wrx_images_partN.zip` files under *Import / Export → Catalog images*, or copy the `images/` folder to `wp-content/uploads/sps-library/images/`. Until then, images load from the parts.subaru.com image server; this can be switched off in Settings.
+- **Updating:** import a newer library JSON with the same structure on the same page.
+
 ## Part-number library (auto names & boxes)
 
 When you type or scan a part number, the name and category/box fill in automatically:

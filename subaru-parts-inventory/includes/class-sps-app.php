@@ -36,6 +36,7 @@ class SPS_App {
 			'activity' => '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
 			'tools'    => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 			'search'   => '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+			'catalog'  => '<path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5M8 7h6M8 11h6"/>',
 			'camera'   => '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
 		);
 		$sw = 'search' === $name ? '2' : '1.6';
@@ -103,6 +104,7 @@ class SPS_App {
 			'removedFrom'  => (string) sps_setting( 'default_removed_from' ),
 			'fitments'     => $manager ? array_values( (array) get_terms( array( 'taxonomy' => SPS_TAX_FIT, 'hide_empty' => false, 'fields' => 'names' ) ) ) : array(),
 			'currency'     => (string) sps_setting( 'currency' ),
+			'library'      => SPS_Library::loaded(),
 			'unit'         => (string) sps_setting( 'distance_unit' ),
 			'perPage'      => (int) $atts['per_page'] ? (int) $atts['per_page'] : (int) sps_setting( 'per_page' ),
 			'showPrices'   => (bool) sps_setting( 'show_prices' ),
@@ -127,6 +129,9 @@ class SPS_App {
 						<button type="button" class="nav-btn" data-nav="add"><?php esc_html_e( 'Add part', 'subaru-parts-inventory' ); ?></button>
 					<?php endif; ?>
 					<button type="button" class="nav-btn" data-nav="inv"><?php esc_html_e( 'Inventory', 'subaru-parts-inventory' ); ?></button>
+					<?php if ( $manager && SPS_Library::loaded() ) : ?>
+						<button type="button" class="nav-btn" data-nav="cat"><?php esc_html_e( 'Subaru catalog', 'subaru-parts-inventory' ); ?></button>
+					<?php endif; ?>
 					<button type="button" class="nav-btn" data-nav="boxes"><?php esc_html_e( 'Boxes', 'subaru-parts-inventory' ); ?></button>
 					<?php if ( $manager ) : ?>
 						<button type="button" class="nav-btn" data-nav="labels"><?php esc_html_e( 'Labels', 'subaru-parts-inventory' ); ?></button>
@@ -162,6 +167,9 @@ class SPS_App {
 					echo self::section( 'add', 'add', __( 'Add a part', 'subaru-parts-inventory' ), self::form_body(), true );
 				}
 				echo self::section( 'inv', 'parts', __( 'Inventory', 'subaru-parts-inventory' ), self::inventory_body( $manager ) );
+				if ( $manager && SPS_Library::loaded() ) {
+					echo self::section( 'cat', 'catalog', __( 'Subaru catalog', 'subaru-parts-inventory' ), self::catalog_body(), true );
+				}
 				echo self::section( 'boxes', 'box', __( 'Storage boxes', 'subaru-parts-inventory' ), '<p class="hint">' . esc_html__( 'Each box holds one Subaru catalog group. Tap a box to list what is inside.', 'subaru-parts-inventory' ) . '</p><div class="box-grid" data-boxes></div>', true );
 				if ( $manager ) {
 					echo self::section( 'labels', 'label', __( 'Labels to print', 'subaru-parts-inventory' ), self::labels_body(), true );
@@ -172,6 +180,7 @@ class SPS_App {
 				?>
 			</div>
 			<div class="toast" data-toast role="status" aria-live="polite" hidden></div>
+			<div class="lightbox" data-lightbox hidden role="dialog" aria-modal="true"><div class="lb-inner"><div class="lb-head"><span data-lb-title></span><button type="button" class="btn faint mini" data-lb-close><?php esc_html_e( 'Close', 'subaru-parts-inventory' ); ?></button></div><div class="lb-body"><img data-lb-img alt=""></div><div class="lb-foot" data-lb-foot></div></div></div>
 			<script type="application/json" data-sps-config><?php echo wp_json_encode( $cfg, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE ); ?></script>
 			<noscript><p class="empty-note"><?php esc_html_e( 'Please enable JavaScript to use the parts inventory.', 'subaru-parts-inventory' ); ?></p></noscript>
 		</div>
@@ -222,7 +231,10 @@ class SPS_App {
 				</div>
 				<div>
 					<label class="field" for="sps-f-name"><?php esc_html_e( 'Name', 'subaru-parts-inventory' ); ?></label>
-					<input type="text" id="sps-f-name" name="name" placeholder="<?php esc_attr_e( 'Turbocharger assembly', 'subaru-parts-inventory' ); ?>">
+					<div class="ac-wrap">
+						<input type="text" id="sps-f-name" name="name" placeholder="<?php esc_attr_e( 'Type a name to search the catalog…', 'subaru-parts-inventory' ); ?>" autocomplete="off">
+						<div class="ac-list" data-ac hidden></div>
+					</div>
 				</div>
 				<div class="full">
 					<label class="field" for="sps-f-cat"><?php esc_html_e( 'Subaru catalog category', 'subaru-parts-inventory' ); ?></label>
@@ -333,6 +345,19 @@ class SPS_App {
 		<div class="list-head inv-row" aria-hidden="true"><span></span><span><?php esc_html_e( 'Part', 'subaru-parts-inventory' ); ?></span><span><?php esc_html_e( 'Condition', 'subaru-parts-inventory' ); ?></span><span><?php esc_html_e( 'Box', 'subaru-parts-inventory' ); ?></span><span class="r"><?php esc_html_e( 'Qty', 'subaru-parts-inventory' ); ?></span></div>
 		<div class="inv-list" data-inv-list></div>
 		<button type="button" class="btn faint mini more" data-action="more" hidden><?php esc_html_e( 'Show more', 'subaru-parts-inventory' ); ?></button>
+		<?php
+		return ob_get_clean();
+	}
+
+	private static function catalog_body() {
+		$meta = get_option( 'sps_oem_meta' );
+		ob_start();
+		?>
+		<p class="hint"><?php echo esc_html( sprintf( /* translators: 1: vehicle, 2: parts, 3: diagrams */ __( 'Official parts.subaru.com catalog for %1$s: %2$s parts on %3$s diagrams. Pick a diagram, then tap "+ Add" on a part you have.', 'subaru-parts-inventory' ), $meta['vehicle'] ?? '', number_format_i18n( (int) ( $meta['parts'] ?? 0 ) ), number_format_i18n( (int) ( $meta['assemblies'] ?? 0 ) ) ) ); ?></p>
+		<div class="chips" data-cat-tops></div>
+		<input type="search" data-cat-filter placeholder="<?php esc_attr_e( 'Filter diagrams…', 'subaru-parts-inventory' ); ?>" autocomplete="off">
+		<div class="asm-list" data-asm-list></div>
+		<div class="asm-view" data-asm-view hidden></div>
 		<?php
 		return ob_get_clean();
 	}
@@ -476,12 +501,27 @@ class SPS_App {
 			'paNeedBox'    => __( 'Scan a box label first.', 'subaru-parts-inventory' ),
 			'paMany'       => __( 'Several parts have this number – tap the one you are putting away:', 'subaru-parts-inventory' ),
 			'identFrom'    => array(
+				'oem'     => __( 'official parts.subaru.com catalog', 'subaru-parts-inventory' ),
 				'library' => __( 'from your parts library', 'subaru-parts-inventory' ),
 				'mine'    => __( 'remembered from your parts', 'subaru-parts-inventory' ),
 				'similar' => __( 'from a similar part number', 'subaru-parts-inventory' ),
 				'rule'    => __( 'guessed from the number group – check it', 'subaru-parts-inventory' ),
 			),
 			'goesIn'       => __( 'goes in', 'subaru-parts-inventory' ),
+			'catalogImg'   => __( 'catalog picture', 'subaru-parts-inventory' ),
+			'diagram'      => __( 'Diagram', 'subaru-parts-inventory' ),
+			'ref'          => __( 'ref.', 'subaru-parts-inventory' ),
+			'msrp'         => __( 'List price (US)', 'subaru-parts-inventory' ),
+			'official'     => __( 'Official name', 'subaru-parts-inventory' ),
+			'otherMY'      => __( 'listed for other model years – check fitment', 'subaru-parts-inventory' ),
+			'inStock'      => __( 'in stock', 'subaru-parts-inventory' ),
+			'have'         => __( 'have', 'subaru-parts-inventory' ),
+			'addThis'      => __( '+ Add', 'subaru-parts-inventory' ),
+			'backToList'   => __( '← All diagrams', 'subaru-parts-inventory' ),
+			'onSite'       => __( 'parts.subaru.com', 'subaru-parts-inventory' ),
+			'noDiagrams'   => __( 'No diagrams match.', 'subaru-parts-inventory' ),
+			'close'        => __( 'Close', 'subaru-parts-inventory' ),
+			'otherMYshort' => __( 'other MY', 'subaru-parts-inventory' ),
 			'usedLbl'      => __( 'Used', 'subaru-parts-inventory' ),
 		);
 	}

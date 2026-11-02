@@ -186,6 +186,41 @@ class SPS_REST {
 		);
 		register_rest_route(
 			self::NS,
+			'/library/tree',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function () {
+					return rest_ensure_response( array( 'meta' => get_option( 'sps_oem_meta' ), 'categories' => SPS_Library::tree() ) );
+				},
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/library/assembly/(?P<code>[A-Za-z0-9_-]+)',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function ( WP_REST_Request $request ) {
+					$a = SPS_Library::assembly( (string) $request['code'] );
+					return $a ? rest_ensure_response( $a ) : new WP_Error( 'sps_not_found', __( 'Diagram not found.', 'subaru-parts-inventory' ), array( 'status' => 404 ) );
+				},
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/library/search',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function ( WP_REST_Request $request ) {
+					return rest_ensure_response( SPS_Library::search( (string) $request['q'], 15 ) );
+				},
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+				'args'                => array( 'q' => array( 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ) ),
+			)
+		);
+		register_rest_route(
+			self::NS,
 			'/stats',
 			array(
 				'methods'             => WP_REST_Server::READABLE,

@@ -191,7 +191,7 @@ class SPS_Frontend {
 			: '<ul class="sps-grid">';
 		foreach ( $query->posts as $post ) {
 			$d    = sps_part_data( $post->ID );
-			$img  = $d['images'] ? '<img src="' . esc_url( $d['images'][0]['thumb'] ) . '" alt="' . esc_attr( $d['images'][0]['alt'] ? $d['images'][0]['alt'] : $d['name'] ) . '" loading="lazy" />' : '<span class="sps-noimg" aria-hidden="true"></span>';
+			$img  = $d['images'] ? '<img src="' . esc_url( $d['images'][0]['thumb'] ) . '" alt="' . esc_attr( $d['images'][0]['alt'] ? $d['images'][0]['alt'] : $d['name'] ) . '" loading="lazy" />' : ( ! empty( $d['catalog_image'] ) ? '<img class="sps-catalog-img" src="' . esc_url( $d['catalog_image'] ) . '" alt="' . esc_attr( $d['name'] ) . '" loading="lazy" />' : '<span class="sps-noimg" aria-hidden="true"></span>' );
 			$cond = sps_condition_badge( $d['condition'] );
 			if ( 'table' === $view ) {
 				$html .= '<tr><td class="sps-table__img"><a href="' . esc_url( $d['url'] ) . '" tabindex="-1">' . $img . '</a></td>'
@@ -274,6 +274,9 @@ class SPS_Frontend {
 		$rows[ __( 'Reference', 'subaru-parts-inventory' ) ] = '<code>' . esc_html( $d['sku'] ) . '</code>';
 
 		ob_start();
+		if ( ! $d['images'] && ! empty( $d['catalog_image'] ) ) {
+			$d['images'] = array( array( 'full' => $d['catalog_image'], 'thumb' => $d['catalog_image'], 'alt' => $d['name'] ) );
+		}
 		echo '<div class="sps-single' . ( $d['images'] ? '' : ' sps-single--noimg' ) . '">';
 		if ( $d['images'] ) {
 			echo '<div class="sps-gallery-view" data-sps-gallery><div class="sps-gallery-view__main"><img src="' . esc_url( $d['images'][0]['full'] ) . '" alt="' . esc_attr( $d['name'] ) . '" /></div>';

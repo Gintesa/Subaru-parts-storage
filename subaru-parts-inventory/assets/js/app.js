@@ -222,8 +222,20 @@
 		if (e.key === 'Enter') { e.preventDefault(); goTo('inv'); }
 	});
 
+	function thumbHtml(d, lazy) {
+		if (d.images && d.images[0]) { return '<img src="' + esc(d.images[0].thumb) + '" alt=""' + (lazy ? ' loading="lazy"' : '') + '>'; }
+		if (d.catalog_image) { return '<img class="is-catalog" src="' + esc(d.catalog_image) + '" alt=""' + (lazy ? ' loading="lazy"' : '') + '>'; }
+		return icon('img');
+	}
+	function diagramBtns(diagrams) {
+		return (diagrams || []).map(function (g) {
+			return '<button type="button" class="btn faint mini" data-diagram="' + esc(g.diagram) + '" data-dtitle="' + esc(g.name + (g.ref ? ' · ' + T.ref + ' ' + g.ref : '')) + '" data-asm="' + esc(g.code) + '">📐 ' + esc(g.name) + (g.ref ? ' · <b>' + esc(g.ref) + '</b>' : '') + (g.my_ok ? '' : ' <span class="tag amber">' + esc(T.otherMYshort) + '</span>') + '</button>';
+		}).join('');
+	}
+	function usd(v) { return v == null || v === '' ? '' : '$' + Number(v).toFixed(2); }
+
 	function invRow(d) {
-		var img = d.images && d.images[0] ? '<img src="' + esc(d.images[0].thumb) + '" alt="" loading="lazy">' : icon('img');
+		var img = thumbHtml(d, true);
 		var box = d.box && d.box.code ? '<span class="tag neon">' + esc(d.box.code) + '</span>' : '<span class="tag">—</span>';
 		var meta = [];
 		if (d.category) { meta.push(d.category.name); }
@@ -303,7 +315,10 @@
 	/* Part detail card (inventory + scanner). */
 	function partCard(d) {
 		if (!d) { return ''; }
-		var img = d.images && d.images[0] ? '<img src="' + esc(d.images[0].thumb) + '" alt="">' : icon('img');
+		var img = thumbHtml(d, false);
+		if (!(d.images && d.images[0]) && d.catalog_image) {
+			img = '<button type="button" class="thumb-btn" data-diagram="' + esc(d.catalog_image) + '" data-dtitle="' + esc(d.part_number + ' – ' + T.catalogImg) + '">' + img + '<i>' + esc(T.catalogImg) + '</i></button>';
+		}
 		var h = '<div class="card" data-card="' + d.id + '"><div class="card-head"><span class="thumb">' + img + '</span><div style="min-width:0">' +
 			'<div class="pn">' + esc(d.part_number || '—') + '</div><div class="pname">' + esc(d.name) + '</div><div class="meta">' + condBadge(d.condition);
 		if (d.sku) { h += '<span class="tag">' + esc(d.sku) + '</span>'; }
@@ -327,8 +342,17 @@
 		if (M && d.removed_from) { kv.push([T.removedFrom, esc(d.removed_from)]); }
 		if (d.sale_price !== '' && d.sale_price != null) { kv.push([T.price, esc(money(d.sale_price))]); }
 		if (d.box && d.box.location) { kv.push([T.box, esc(d.box.location)]); }
+		if (d.catalog) {
+			if (d.catalog.aliases && d.catalog.aliases.replace(/\.$/, '') !== d.name) { kv.push([T.official, esc(d.catalog.aliases)]); }
+			if (d.catalog.notes) { kv.push(['ℹ', esc(d.catalog.notes)]); }
+			if (M && d.catalog.price != null) { kv.push([T.msrp, esc(usd(d.catalog.price)) + (d.catalog.url ? ' · <a href="' + esc(d.catalog.url) + '" target="_blank" rel="noopener">' + esc(T.onSite) + '</a>' : '')]); }
+			if (!d.catalog.my_ok) { kv.push(['⚠', esc(T.otherMY)]); }
+		}
 		if (kv.length) {
 			h += '<dl class="kv">' + kv.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>';
+		}
+		if (d.catalog && d.catalog.diagrams && d.catalog.diagrams.length) {
+			h += '<div class="diag-row">' + diagramBtns(d.catalog.diagrams) + '</div>';
 		}
 		if (M) {
 			var opts = Object.keys(C.statuses).map(function (k) { return '<option value="' + esc(k) + '"' + (k === d.status ? ' selected' : '') + '>' + esc(C.statuses[k].label) + '</option>'; }).join('');
@@ -973,7 +997,17 @@
 				}
 				var from = (T.identFrom && T.identFrom[r.source]) || '';
 				hint.className = 'ident' + (r.source === 'rule' || r.source === 'similar' ? ' guess' : '');
-				hint.innerHTML = '✓ ' + (r.name ? '<b>' + esc(r.name) + '</b> ' : '') + (r.box ? esc(T.goesIn) + ' <b class="boxcode">' + esc(r.box) + '</b> ' : '') + '<span>(' + esc(from) + ')</span>';
+				var o = r.oem;
+				var html = '<div class="ident-main">' + (o && o.image ? '<button type="button" class="ident-img" data-diagram="' + esc(o.image) + '" data-dtitle="' + esc(o.part_number + ' – ' + o.name) + '"><img src="' + esc(o.image) + '" alt=""></button>' : '') +
+					'<div>✓ ' + (r.name ? '<b>' + esc(r.name) + '</b> ' : '') + (r.box ? esc(T.goesIn) + ' <b class="boxcode">' + esc(r.box) + '</b> ' : '') + '<span>(' + esc(from) + ')</span>';
+				if (o) {
+					if (o.aliases && o.aliases.replace(/\.$/, '') !== r.name) { html += '<div class="pmeta">' + esc(o.aliases) + '</div>'; }
+					if (o.price != null) { html += '<div class="pmeta">' + esc(T.msrp) + ' ' + esc(usd(o.price)) + '</div>'; }
+					if (!o.my_ok) { html += '<div class="warn">⚠ ' + esc(T.otherMY) + '</div>'; }
+				}
+				html += '</div></div>';
+				if (o && o.diagrams && o.diagrams.length) { html += '<div class="diag-row">' + diagramBtns(o.diagrams.slice(0, 3)) + '</div>'; }
+				hint.innerHTML = html;
 				hint.hidden = false;
 			}).catch(function () { hint.hidden = true; });
 		}, 300);
@@ -1095,6 +1129,169 @@
 				btn.textContent = form.part_id.value ? T.saveChanges : T.savePart;
 			});
 		});
+	}
+
+	/* ------------------------------------------------------------------ */
+	/* Lightbox (diagrams + catalog pictures)                              */
+	/* ------------------------------------------------------------------ */
+	var lb = $('[data-lightbox]');
+	function openLightbox(src, title, foot) {
+		if (!lb || !src) { return; }
+		$('[data-lb-img]', lb).src = src;
+		$('[data-lb-title]', lb).textContent = title || '';
+		$('[data-lb-foot]', lb).innerHTML = foot || '';
+		lb.hidden = false;
+		document.documentElement.classList.add('sps-lb-open');
+	}
+	function closeLightbox() {
+		if (!lb) { return; }
+		lb.hidden = true;
+		$('[data-lb-img]', lb).removeAttribute('src');
+		document.documentElement.classList.remove('sps-lb-open');
+	}
+	if (lb) {
+		lb.addEventListener('click', function (e) {
+			if (e.target === lb || e.target.closest('[data-lb-close]')) { closeLightbox(); }
+			var go = e.target.closest('[data-open-asm]');
+			if (go) { closeLightbox(); openAssembly(go.getAttribute('data-open-asm')); goTo('cat'); }
+		});
+		document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !lb.hidden) { closeLightbox(); } });
+	}
+	root.addEventListener('click', function (e) {
+		var b = e.target.closest('[data-diagram]');
+		if (!b || (lb && lb.contains(b))) { return; }
+		e.preventDefault();
+		var asm = b.getAttribute('data-asm');
+		openLightbox(b.getAttribute('data-diagram'), b.getAttribute('data-dtitle'),
+			asm && M && C.library ? '<button type="button" class="btn ghost mini" data-open-asm="' + esc(asm) + '">' + esc(T.diagram) + ' → ' + esc(T.addThis.replace('+ ', '')) + '…</button>' : '');
+	});
+
+	/* ------------------------------------------------------------------ */
+	/* Subaru catalog browser                                              */
+	/* ------------------------------------------------------------------ */
+	var cat = { tree: null, top: '', filter: '' };
+	var asmList = $('[data-asm-list]');
+	var asmView = $('[data-asm-view]');
+	function loadCatalog() {
+		return api('library/tree').then(function (res) {
+			cat.tree = res.categories || [];
+			if (!cat.top && cat.tree.length) { cat.top = cat.tree[0].name; }
+			var total = 0;
+			cat.tree.forEach(function (t) { total += t.assemblies.length; });
+			count('cat', total + ' ' + T.diagram.toLowerCase() + 's');
+			renderCatTops();
+			renderAsmList();
+		}).catch(function (e) { asmList.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
+	}
+	function renderCatTops() {
+		$('[data-cat-tops]').innerHTML = cat.tree.map(function (t) {
+			return '<button type="button" class="chip' + (t.name === cat.top ? ' on' : '') + '" data-top="' + esc(t.name) + '">' + esc(t.name) + (t.have ? ' · ' + t.have : '') + '</button>';
+		}).join('');
+	}
+	function renderAsmList() {
+		asmView.hidden = true;
+		asmList.hidden = false;
+		var f = cat.filter.toLowerCase();
+		var rows = [];
+		cat.tree.forEach(function (t) {
+			if (!f && t.name !== cat.top) { return; }
+			t.assemblies.forEach(function (a) {
+				if (f && a.name.toLowerCase().indexOf(f) === -1 && a.code.toLowerCase().indexOf(f) === -1) { return; }
+				rows.push('<button type="button" class="asm-row' + (a.my_ok ? '' : ' other-my') + '" data-asm-open="' + esc(a.code) + '">' +
+					'<span class="asm-name">' + esc(a.name) + (f ? ' <span class="pmeta" style="display:inline">· ' + esc(t.name) + '</span>' : '') + '</span>' +
+					'<span class="tag">' + esc(a.parts) + '</span>' + (a.have ? '<span class="tag ok">' + esc(T.have) + ' ' + esc(a.have) + '</span>' : '<span></span>') + '</button>');
+			});
+		});
+		asmList.innerHTML = rows.length ? rows.join('') : '<p class="empty-note">' + esc(T.noDiagrams) + '</p>';
+	}
+	function openAssembly(code) {
+		asmList.hidden = true;
+		asmView.hidden = false;
+		asmView.innerHTML = '<p class="empty-note"><span class="spinner"></span></p>';
+		api('library/assembly/' + encodeURIComponent(code)).then(function (a) {
+			var h = '<div class="asm-head"><button type="button" class="btn faint mini" data-asm-back>' + esc(T.backToList) + '</button>' +
+				'<div><div class="pn">' + esc(a.code) + '</div><div class="pname">' + esc(a.name) + '</div><div class="pmeta">' + esc(a.top) + (a.my_ok ? '' : ' · ⚠ ' + esc(T.otherMY)) + '</div></div></div>';
+			if (a.diagram) {
+				h += '<button type="button" class="asm-diagram" data-diagram="' + esc(a.diagram) + '" data-dtitle="' + esc(a.code + ' – ' + a.name) + '"><img src="' + esc(a.diagram) + '" alt="' + esc(a.name) + '" loading="lazy"></button>';
+			}
+			h += '<div class="asm-parts">' + a.parts.map(function (p) {
+				var have = p.stock.length ? p.stock.map(function (st) { return '<span class="tag ok" title="' + esc(st.sku) + '">' + esc((C.conditions[st.condition] || {}).label || st.condition) + ' ×' + esc(st.quantity) + '</span>'; }).join(' ') : '';
+				return '<div class="asm-part">' +
+					'<span class="ref">' + esc(p.ref || '') + '</span>' +
+					(p.image ? '<button type="button" class="thumb" data-diagram="' + esc(p.image) + '" data-dtitle="' + esc(p.part_number + ' – ' + p.name) + '"><img src="' + esc(p.image) + '" alt="" loading="lazy"></button>' : '<span class="thumb">' + icon('img') + '</span>') +
+					'<span style="min-width:0"><span class="pn">' + esc(p.part_number) + '</span><span class="pname">' + esc(p.name) + '</span>' +
+					'<span class="pmeta">' + esc(p.aliases) + '</span>' + (have ? '<span class="meta">' + have + '</span>' : '') + '</span>' +
+					'<span class="asm-price">' + esc(usd(p.price)) + '</span>' +
+					'<button type="button" class="btn mini" data-add-from="' + esc(p.part_number) + '" data-add-name="' + esc(p.name) + '" data-add-cat="' + esc(p.category_id) + '">' + esc(T.addThis) + '</button></div>';
+			}).join('') + '</div>';
+			asmView.innerHTML = h;
+		}).catch(function (e) { asmView.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
+	}
+	if (M && asmList) {
+		loaders.cat = loadCatalog;
+		$('[data-cat-tops]').addEventListener('click', function (e) {
+			var b = e.target.closest('[data-top]');
+			if (!b) { return; }
+			cat.top = b.getAttribute('data-top');
+			cat.filter = '';
+			$('[data-cat-filter]').value = '';
+			renderCatTops();
+			renderAsmList();
+		});
+		$('[data-cat-filter]').addEventListener('input', debounce(function (e) { cat.filter = e.target.value.trim(); renderAsmList(); }, 200));
+		asmList.addEventListener('click', function (e) {
+			var b = e.target.closest('[data-asm-open]');
+			if (b) { openAssembly(b.getAttribute('data-asm-open')); }
+		});
+		asmView.addEventListener('click', function (e) {
+			if (e.target.closest('[data-asm-back]')) { renderAsmList(); return; }
+			var add = e.target.closest('[data-add-from]');
+			if (add) {
+				resetForm();
+				form.part_number.value = add.getAttribute('data-add-from');
+				form.name.value = add.getAttribute('data-add-name');
+				form.name.dataset.auto = '1';
+				if (add.getAttribute('data-add-cat') && add.getAttribute('data-add-cat') !== '0') { form.category_id.value = add.getAttribute('data-add-cat'); form.dataset.catManual = '1'; syncBox(); }
+				goTo('add');
+				checkDup();
+				identify();
+			}
+		});
+	}
+
+	/* Name field: search the official catalog by words. */
+	var ac = form ? $('[data-ac]', form) : null;
+	if (M && ac && C.library) {
+		var acSeq = 0;
+		form.name.addEventListener('input', debounce(function () {
+			var q = form.name.value.trim();
+			if (q.length < 3 || form.part_number.value.trim()) { ac.hidden = true; return; }
+			var seq = ++acSeq;
+			api('library/search', { params: { q: q } }).then(function (list) {
+				if (seq !== acSeq) { return; }
+				if (!list.length) { ac.hidden = true; return; }
+				ac.innerHTML = list.map(function (r, i) {
+					return '<button type="button" class="ac-item" data-ac-i="' + i + '">' + (r.image ? '<img src="' + esc(r.image) + '" alt="" loading="lazy">' : '<span class="ac-noimg"></span>') +
+						'<span><span class="pn">' + esc(r.part_number) + '</span> <b>' + esc(r.name) + '</b>' + (r.my_ok ? '' : ' <span class="tag amber">' + esc(T.otherMYshort) + '</span>') +
+						'<span class="pmeta">' + esc(r.top + ' › ' + r.asm) + (r.ref ? ' · ' + esc(T.ref) + ' ' + esc(r.ref) : '') + '</span></span></button>';
+				}).join('');
+				ac.hidden = false;
+				ac._list = list;
+			}).catch(function () { ac.hidden = true; });
+		}, 250));
+		ac.addEventListener('click', function (e) {
+			var b = e.target.closest('[data-ac-i]');
+			if (!b) { return; }
+			var r = ac._list[Number(b.getAttribute('data-ac-i'))];
+			form.part_number.value = r.part_number;
+			form.name.value = r.name;
+			form.name.dataset.auto = '1';
+			if (r.category_id) { form.category_id.value = r.category_id; form.dataset.catManual = '1'; syncBox(); }
+			ac.hidden = true;
+			checkDup();
+			identify();
+		});
+		document.addEventListener('click', function (e) { if (!e.target.closest('.ac-wrap')) { ac.hidden = true; } });
 	}
 
 	/* ------------------------------------------------------------------ */

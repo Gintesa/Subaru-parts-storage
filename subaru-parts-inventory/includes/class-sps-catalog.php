@@ -240,31 +240,83 @@ class SPS_Catalog {
 	/**
 	 * Identify a part number.
 	 *
-	 * @return array{found:bool,number:string,name:string,category_id:int,category_path:string,box:string,source:string}
+	 * Name priority: your own name for this number → official parts.subaru.com name →
+	 * your imported CSV library → a similar number (same 5-digit base) → number-group rule.
+	 * Category: your own → official catalog diagram → CSV → similar → rule (top level only).
+	 *
+	 * @return array<string,mixed>
 	 */
 	public static function identify( $number ) {
 		global $wpdb;
 		self::ready();
 		$norm = sps_normalize_number( $number );
-		$out  = array( 'found' => false, 'number' => $norm, 'name' => '', 'category_id' => 0, 'category_path' => '', 'box' => '', 'source' => '' );
+		$out  = array( 'found' => false, 'number' => $norm, 'name' => '', 'category_id' => 0, 'category_path' => '', 'box' => '', 'source' => '', 'oem' => null );
 		if ( strlen( $norm ) < 3 ) {
 			return $out;
 		}
 		$table = self::table();
-		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT name, category, source FROM {$table} WHERE pn_norm = %s", $norm ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		if ( $row ) {
-			$out['name']   = (string) $row['name'];
-			$out['source'] = 'mine' === $row['source'] ? 'mine' : 'library';
-			$out['category_path'] = (string) $row['category'];
+		$cat_id = 0;
+		$set_cat = static function ( $id ) use ( &$cat_id ) {
+			if ( ! $cat_id && $id && term_exists( (int) $id, SPS_TAX_CAT ) ) {
+				$cat_id = (int) $id;
+			}
+		};
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT name, category, source FROM {$table} WHERE pn_norm = %s", $norm ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$mine = null;
+		$lib  = null;
+		foreach ( (array) $rows as $r ) {
+			if ( 'mine' === $r['source'] ) {
+				$mine = $r;
+			} else {
+				$lib = $r;
+			}
+		}
+		if ( $mine ) {
+			$out['name']   = (string) $mine['name'];
+			$out['source'] = 'mine';
+			if ( '' !== $mine['category'] ) {
+				$set_cat( SPS_Categories::term_from_path( $mine['category'], false ) );
+			}
+		}
+		$oem = class_exists( 'SPS_Library' ) ? SPS_Library::details( $norm ) : null;
+		if ( $oem ) {
+			$out['oem'] = $oem;
+			if ( '' === $out['name'] ) {
+				$out['name']   = $oem['name'];
+				$out['source'] = 'oem';
+			}
+			$set_cat( $oem['term_id'] );
+		}
+		if ( $lib ) {
+			if ( '' === $out['name'] ) {
+				$out['name']   = (string) $lib['name'];
+				$out['source'] = 'library';
+			}
+			if ( '' !== $lib['category'] ) {
+				$set_cat( SPS_Categories::term_from_path( $lib['category'], false ) );
+			}
 		}
 		// Same 5-digit base number (e.g. 22433AA750 → 22433AA790).
-		if ( '' === $out['name'] && preg_match( '/^\d{5}/', $norm, $m ) ) {
-			$similar = $wpdb->get_row( $wpdb->prepare( "SELECT name, category, COUNT(*) AS n FROM {$table} WHERE pn_norm LIKE %s AND name <> '' GROUP BY name, category ORDER BY n DESC LIMIT 1", $wpdb->esc_like( $m[0] ) . '%' ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( ( '' === $out['name'] || ! $cat_id ) && preg_match( '/^\d{5}/', $norm, $m ) ) {
+			$like = $wpdb->esc_like( $m[0] ) . '%';
+			if ( class_exists( 'SPS_Library' ) && SPS_Library::loaded() ) {
+				$sim = $wpdb->get_row( $wpdb->prepare( 'SELECT name, term_id, COUNT(*) AS n FROM ' . SPS_Library::t( 'parts' ) . " WHERE pn_norm LIKE %s GROUP BY name, term_id ORDER BY (top = 'Maintenance') ASC, n DESC LIMIT 1", $like ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+				if ( $sim ) {
+					if ( '' === $out['name'] ) {
+						$out['name']   = (string) $sim['name'];
+						$out['source'] = 'similar';
+					}
+					$set_cat( (int) $sim['term_id'] );
+				}
+			}
+			$similar = $wpdb->get_row( $wpdb->prepare( "SELECT name, category, COUNT(*) AS n FROM {$table} WHERE pn_norm LIKE %s AND name <> '' GROUP BY name, category ORDER BY n DESC LIMIT 1", $like ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 			if ( $similar ) {
-				$out['name']   = (string) $similar['name'];
-				$out['source'] = 'similar';
-				if ( '' === $out['category_path'] ) {
-					$out['category_path'] = (string) $similar['category'];
+				if ( '' === $out['name'] ) {
+					$out['name']   = (string) $similar['name'];
+					$out['source'] = 'similar';
+				}
+				if ( '' !== $similar['category'] ) {
+					$set_cat( SPS_Categories::term_from_path( $similar['category'], false ) );
 				}
 			}
 		}
@@ -274,23 +326,28 @@ class SPS_Catalog {
 				$out['name']   = $rule[0];
 				$out['source'] = 'rule';
 			}
-			if ( '' === $out['category_path'] ) {
-				$out['category_path'] = $rule[1];
-				if ( '' === $out['source'] ) {
+			if ( ! $cat_id ) {
+				$set_cat( SPS_Categories::term_from_path( $rule[1], false ) );
+				if ( ! $cat_id && class_exists( 'SPS_Library' ) ) {
+					$top = trim( explode( '>', $rule[1] )[0] );
+					if ( isset( SPS_Library::LEGACY_MAP[ $top ] ) ) {
+						$t = term_exists( SPS_Library::LEGACY_MAP[ $top ], SPS_TAX_CAT, 0 );
+						$set_cat( $t ? (int) $t['term_id'] : 0 );
+					}
+				}
+				if ( $cat_id && '' === $out['source'] ) {
 					$out['source'] = 'rule';
 				}
 			}
 		}
-		if ( '' !== $out['category_path'] ) {
-			$out['category_id'] = (int) SPS_Categories::term_from_path( $out['category_path'], false );
-			if ( $out['category_id'] ) {
-				$term                 = get_term( $out['category_id'], SPS_TAX_CAT );
-				$box                  = sps_term_box( $term );
-				$out['box']           = $box['code'];
-				$out['category_path'] = html_entity_decode( sps_category_path( $term ), ENT_QUOTES );
-			}
+		if ( $cat_id ) {
+			$term                 = get_term( $cat_id, SPS_TAX_CAT );
+			$box                  = sps_term_box( $term );
+			$out['category_id']   = $cat_id;
+			$out['box']           = $box['code'];
+			$out['category_path'] = html_entity_decode( sps_category_path( $term ), ENT_QUOTES );
 		}
-		$out['found'] = '' !== $out['name'] || $out['category_id'] > 0;
+		$out['found'] = '' !== $out['name'] || $cat_id > 0;
 		return $out;
 	}
 

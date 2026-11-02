@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Subaru Parts Inventory
  * Description:       Inventory system for new and used Subaru parts: Subaru-catalog categories mapped to storage boxes, condition grading and inspection notes, printable part and box labels with QR codes and barcodes, scan lookup, CSV import/export, and a public catalogue block, shortcode and widget.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            gintesa
@@ -14,7 +14,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'SPS_VERSION', '1.2.0' );
+define( 'SPS_VERSION', '1.3.0' );
 define( 'SPS_FILE', __FILE__ );
 define( 'SPS_DIR', plugin_dir_path( __FILE__ ) );
 define( 'SPS_URL', plugin_dir_url( __FILE__ ) );
@@ -25,6 +25,7 @@ require_once SPS_DIR . 'includes/class-sps-categories.php';
 require_once SPS_DIR . 'includes/class-sps-admin.php';
 require_once SPS_DIR . 'includes/class-sps-labels.php';
 require_once SPS_DIR . 'includes/class-sps-catalog.php';
+require_once SPS_DIR . 'includes/class-sps-library.php';
 require_once SPS_DIR . 'includes/class-sps-rest.php';
 require_once SPS_DIR . 'includes/class-sps-frontend.php';
 require_once SPS_DIR . 'includes/class-sps-app.php';
@@ -40,7 +41,11 @@ function sps_activate() {
 	SPS_Post_Types::add_capabilities();
 	SPS_Categories::seed();
 	SPS_Catalog::install();
+	SPS_Library::install();
 	sps_run_upgrades( (string) get_option( 'sps_version', '' ) );
+	if ( ! SPS_Library::loaded() ) {
+		SPS_Library::install_bundled();
+	}
 	update_option( 'sps_version', SPS_VERSION );
 	flush_rewrite_rules();
 }
@@ -58,6 +63,7 @@ add_action(
 		SPS_Categories::init();
 		SPS_Labels::init();
 		SPS_Catalog::init();
+		SPS_Library::init();
 		SPS_REST::init();
 		SPS_Frontend::init();
 		SPS_App::init();
@@ -70,6 +76,18 @@ add_action(
 	}
 );
 
+// The one-time catalog install (a few seconds) runs on an admin page load, never for visitors.
+add_action(
+	'admin_init',
+	static function () {
+		if ( ! SPS_Library::loaded() && current_user_can( SPS_EDIT_CAP ) && ! get_transient( 'sps_oem_installing' ) ) {
+			set_transient( 'sps_oem_installing', 1, 10 * MINUTE_IN_SECONDS );
+			SPS_Library::install_bundled();
+			delete_transient( 'sps_oem_installing' );
+		}
+	}
+);
+
 // Re-run setup steps after an update (activation hook does not fire on updates).
 add_action(
 	'init',
@@ -78,6 +96,7 @@ add_action(
 			SPS_Post_Types::add_capabilities();
 			SPS_Categories::seed();
 			SPS_Catalog::install();
+			SPS_Library::install();
 			sps_run_upgrades( (string) get_option( 'sps_version', '' ) );
 			update_option( 'sps_version', SPS_VERSION );
 			flush_rewrite_rules( false );

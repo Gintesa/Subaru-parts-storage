@@ -143,6 +143,7 @@ function sps_default_settings() {
 		'sku_digits'        => 5,
 		'default_fitment'   => '2017 Subaru WRX 2.0L 6MT Limited',
 		'default_removed_from' => 'JF1VA1L62H9817699',
+		'remote_images'     => 1,
 		'distance_unit'     => 'km',
 		'currency'          => '€',
 		'label_template'    => 'brother_62x29',
@@ -579,6 +580,26 @@ function sps_part_data( $post_id, $context = 'public' ) {
 		'description'     => $post ? wp_kses_post( wpautop( $post->post_content ) ) : '',
 		'images'          => $images,
 	);
+
+	// Official catalog info (diagram, callout, list price, catalog picture).
+	$oem = class_exists( 'SPS_Library' ) ? SPS_Library::details( $data['part_number'] ) : null;
+	if ( $oem ) {
+		$data['catalog'] = array(
+			'name'     => $oem['name'],
+			'aliases'  => $oem['aliases'],
+			'notes'    => $oem['notes'],
+			'image'    => $oem['image'],
+			'diagrams' => $oem['diagrams'],
+			'my_ok'    => $oem['my_ok'],
+			'url'      => $oem['url'],
+		);
+		if ( 'admin' === $context ) {
+			$data['catalog']['price'] = $oem['price'];
+		}
+		if ( ! $images && $oem['image'] ) {
+			$data['catalog_image'] = $oem['image'];
+		}
+	}
 
 	if ( sps_setting( 'show_quantity' ) || 'admin' === $context ) {
 		$data['quantity'] = (int) sps_meta( $post_id, 'quantity', 0 );

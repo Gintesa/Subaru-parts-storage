@@ -243,6 +243,17 @@ class SPS_Categories {
 		if ( ! taxonomy_exists( SPS_TAX_CAT ) ) {
 			SPS_Post_Types::register();
 		}
+		// With the bundled parts.subaru.com catalog, the tree is built from it (SPS_Library::import).
+		if ( class_exists( 'SPS_Library' ) && file_exists( SPS_Library::bundled_path() ) ) {
+			$ts = self::ensure_term( 'To Sort (Unidentified)', 0 );
+			if ( $ts && ! get_term_meta( $ts, 'sps_seeded', true ) ) {
+				update_term_meta( $ts, 'sps_box_code', 'BOX-TS' );
+				update_term_meta( $ts, 'sps_order', 999 );
+				update_term_meta( $ts, 'sps_seeded', 1 );
+			}
+			update_term_meta( $ts, 'sps_lib', 1 );
+			return;
+		}
 		$order = 0;
 		foreach ( self::default_tree() as $group => $info ) {
 			list( $code, $children ) = $info;

@@ -111,3 +111,5 @@
 }
 .sps-filters input[type=search] { height: 42px; line-height: 1.2; }
 .sps-single--noimg { grid-template-columns: 1fr; }
+
+.sps-card__img img.sps-catalog-img { object-fit: contain; background: #fff; }

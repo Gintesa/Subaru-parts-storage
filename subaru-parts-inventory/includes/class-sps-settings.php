@@ -53,6 +53,7 @@ class SPS_Settings {
 			'show_prices'         => empty( $in['show_prices'] ) ? 0 : 1,
 			'show_quantity'       => empty( $in['show_quantity'] ) ? 0 : 1,
 			'show_location'       => empty( $in['show_location'] ) ? 0 : 1,
+			'remote_images'       => empty( $in['remote_images'] ) ? 0 : 1,
 			'per_page'            => isset( $in['per_page'] ) ? max( 1, min( 100, (int) $in['per_page'] ) ) : $def['per_page'],
 			'catalog_page_id'     => isset( $in['catalog_page_id'] ) ? absint( $in['catalog_page_id'] ) : 0,
 			'delete_on_uninstall' => empty( $in['delete_on_uninstall'] ) ? 0 : 1,
@@ -112,6 +113,7 @@ class SPS_Settings {
 							<label style="display:block"><input type="checkbox" name="<?php echo esc_attr( $n ); ?>[show_quantity]" value="1" <?php checked( $s['show_quantity'], 1 ); ?> /> <?php esc_html_e( 'Show quantity', 'subaru-parts-inventory' ); ?></label>
 							<label style="display:block"><input type="checkbox" name="<?php echo esc_attr( $n ); ?>[show_prices]" value="1" <?php checked( $s['show_prices'], 1 ); ?> /> <?php esc_html_e( 'Show asking prices', 'subaru-parts-inventory' ); ?></label>
 							<label style="display:block"><input type="checkbox" name="<?php echo esc_attr( $n ); ?>[show_location]" value="1" <?php checked( $s['show_location'], 1 ); ?> /> <?php esc_html_e( 'Show storage box / location', 'subaru-parts-inventory' ); ?></label>
+							<label style="display:block"><input type="checkbox" name="<?php echo esc_attr( $n ); ?>[remote_images]" value="1" <?php checked( $s['remote_images'], 1 ); ?> /> <?php esc_html_e( 'Show catalog images from the parts.subaru.com image server when the image pack is not uploaded', 'subaru-parts-inventory' ); ?></label>
 						</td></tr>
 					<tr><th scope="row"><label for="per_page"><?php esc_html_e( 'Parts per page', 'subaru-parts-inventory' ); ?></label></th>
 						<td><input id="per_page" type="number" min="1" max="100" class="small-text" name="<?php echo esc_attr( $n ); ?>[per_page]" value="<?php echo (int) $s['per_page']; ?>" /></td></tr>
@@ -130,7 +132,7 @@ class SPS_Settings {
 
 			<hr>
 			<h2><?php esc_html_e( 'Subaru catalog categories', 'subaru-parts-inventory' ); ?></h2>
-			<p><?php esc_html_e( 'Re-create any of the default Subaru catalog categories you deleted. Existing categories, box codes and your own categories are not changed.', 'subaru-parts-inventory' ); ?></p>
+			<p><?php esc_html_e( 'Re-create any parts.subaru.com categories / diagrams you deleted. Box codes and your own categories are kept.', 'subaru-parts-inventory' ); ?></p>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="sps_reseed" />
 				<?php wp_nonce_field( 'sps_reseed' ); ?>
@@ -147,6 +149,12 @@ class SPS_Settings {
 			wp_die( esc_html__( 'Not allowed.', 'subaru-parts-inventory' ) );
 		}
 		SPS_Categories::seed();
+		if ( file_exists( SPS_Library::bundled_path() ) ) {
+			$data = SPS_Library::read( SPS_Library::bundled_path() );
+			if ( ! is_wp_error( $data ) ) {
+				SPS_Library::import( $data );
+			}
+		}
 		wp_safe_redirect( admin_url( 'edit.php?post_type=' . SPS_PT . '&page=sps-settings&sps_msg=' . rawurlencode( __( 'Default categories restored.', 'subaru-parts-inventory' ) ) ) );
 		exit;
 	}

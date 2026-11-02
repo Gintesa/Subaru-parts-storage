@@ -107,6 +107,7 @@ class SPS_Import_Export {
 					</form>
 				</div>
 			</div>
+			<?php SPS_Library::panel(); ?>
 			<?php SPS_Catalog::panel(); ?>
 		</div>
 		<?php
