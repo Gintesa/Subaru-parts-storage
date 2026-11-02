@@ -144,6 +144,8 @@ function sps_default_settings() {
 		'default_fitment'   => '2017 Subaru WRX 2.0L 6MT Limited',
 		'default_removed_from' => 'JF1VA1L62H9817699',
 		'remote_images'     => 1,
+		'usd_rate'          => 0.92,
+		'value_factors'     => array( 'new' => 80, 'used' => 50, 'bad' => 25, 'unusable' => 10 ),
 		'distance_unit'     => 'km',
 		'currency'          => '€',
 		'label_template'    => 'brother_62x29',
@@ -611,7 +613,12 @@ function sps_part_data( $post_id, $context = 'public' ) {
 		$data['box'] = sps_part_box( $post_id );
 	}
 	if ( 'admin' === $context ) {
+		$pv    = sps_part_value( $post_id );
 		$data += array(
+			'value_each'     => $pv['value'],
+			'value_source'   => $pv['source'],
+			'value_factor'   => $pv['factor'],
+			'value_fmt'      => $pv['value'] ? sps_money( $pv['value'] ) : '',
 			'edit_url'       => get_edit_post_link( $post_id, 'raw' ),
 			'removed_from'   => (string) sps_meta( $post_id, 'removed_from' ),
 			'purchase_price' => sps_meta( $post_id, 'purchase_price' ),
@@ -879,4 +886,36 @@ function sps_run_upgrades( $from ) {
 		SPS_Catalog::remember( (int) $id );
 	}
 	sps_flush_caches();
+}
+
+/**
+ * Value of ONE piece of a part.
+ *
+ * Your own "Estimated value" wins. Otherwise it is estimated from the official
+ * parts.subaru.com list price (USD) × exchange rate × condition factor
+ * (Settings: new 80 %, used 50 %, bad 25 %, unusable 10 % by default).
+ *
+ * @return array{value:float,source:string,msrp:float|null,factor:int}
+ */
+function sps_part_value( $post_id ) {
+	$manual = sps_meta( $post_id, 'value' );
+	if ( '' !== $manual && null !== $manual && (float) $manual > 0 ) {
+		return array( 'value' => (float) $manual, 'source' => 'manual', 'msrp' => null, 'factor' => 100 );
+	}
+	$msrp = null;
+	if ( class_exists( 'SPS_Library' ) && SPS_Library::loaded() ) {
+		$row = SPS_Library::get( sps_meta( $post_id, 'part_number' ) );
+		if ( $row && null !== $row['price'] && '' !== $row['price'] ) {
+			$msrp = (float) $row['price'];
+		}
+	}
+	if ( null === $msrp || $msrp <= 0 ) {
+		return array( 'value' => 0.0, 'source' => 'none', 'msrp' => null, 'factor' => 0 );
+	}
+	$factors = (array) sps_setting( 'value_factors' );
+	$cond    = (string) sps_meta( $post_id, 'condition', 'used' );
+	$factor  = isset( $factors[ $cond ] ) ? (int) $factors[ $cond ] : 50;
+	$rate    = (float) sps_setting( 'usd_rate' );
+	$rate    = $rate > 0 ? $rate : 1;
+	return array( 'value' => round( $msrp * $rate * $factor / 100, 2 ), 'source' => 'estimate', 'msrp' => $msrp, 'factor' => $factor );
 }

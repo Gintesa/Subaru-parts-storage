@@ -53,6 +53,10 @@ Inside each parts.subaru.com category, the diagrams are grouped by Subaru **serv
 - **Add missing pictures:** in the Subaru catalog, use **📷 Add picture** on any part, or **📷 Add / replace diagram image**. On a part card, **Use my photo as catalog picture** copies one of your own photos. Your pictures are stored in `images/custom/` and survive catalog re-imports.
 - **Thumbnails:** every category, sub-box and diagram shows a diagram thumbnail in the catalog browser and on box cards. In a diagram, **Use as thumbnail for …** picks a different one.
 
+## Inventory value
+
+The *Est. value* total counts every part you still have × quantity. A part's value is the **Estimated value** you entered on it. If that's empty, it is estimated automatically from the parts.subaru.com **list price (USD) × exchange rate × condition %**. The defaults are 1 USD = 0.92 € and new 80 %, used 50 %, bad 25 %, unusable 10 %; you can change all of them under *Settings → Automatic value estimate*. Estimated totals are shown with "~", and parts without any price are counted separately.
+
 ## Part-number library (auto names & boxes)
 
 When you type or scan a part number, the name and category/box fill in automatically:

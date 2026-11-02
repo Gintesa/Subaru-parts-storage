@@ -607,6 +607,8 @@ class SPS_REST {
 					'not_boxed'  => $s['by_status']['not_boxed'],
 					'value'      => $s['value'],
 					'value_fmt'  => sps_money( $s['value'] ),
+					'value_est'  => $s['value_est'],
+					'value_none' => $s['value_none'],
 					'cost_fmt'   => sps_money( $s['cost'] ),
 					'unlabelled' => $s['unlabelled'],
 					'no_photo'   => $s['no_photo'],

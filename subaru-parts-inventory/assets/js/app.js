@@ -162,7 +162,7 @@
 				html = stat(T.parts, esc(s.parts), esc(s.items) + ' ' + esc(T.pieces.toLowerCase()), 'inv') +
 					stat(T.notBoxed, esc(s.not_boxed || 0), esc(s.unlabelled) + ' ' + esc(T.unlabelled.toLowerCase()), 'labels', (s.not_boxed || s.unlabelled) ? 'warn' : 'ok') +
 					stat(T.newUsed, esc(s['new']) + '<small>/</small>' + esc(s.used), '', 'inv') +
-					stat(T.value, esc(s.value_fmt || '—'), esc(T.cost) + ' ' + esc(s.cost_fmt || '—'), 'tools');
+					stat(T.value, (s.value_est ? '~' : '') + esc(s.value_fmt || '—'), s.value_none ? esc(s.value_none) + ' ' + esc(T.valueNone) : (s.value_est ? esc(T.valueEst) : esc(T.cost) + ' ' + esc(s.cost_fmt || '—')), 'tools', s.value_none ? 'warn' : '');
 			} else {
 				html = stat(T.parts, esc(s.parts), '', 'inv') + stat(T.newLbl, esc(s['new']), '', 'inv') + stat(T.usedLbl, esc(s.used), '', 'inv') +
 					stat(T.boxes, String(boxes ? boxes.length : '—'), '', 'boxes');
@@ -342,6 +342,7 @@
 		if (M && d.removed_from) { kv.push([T.removedFrom, esc(d.removed_from)]); }
 		if (d.sale_price !== '' && d.sale_price != null) { kv.push([T.price, esc(money(d.sale_price))]); }
 		if (d.box && d.box.location) { kv.push([T.box, esc(d.box.location)]); }
+		if (M && d.value_fmt) { kv.push([T.valueEach, (d.value_source === 'estimate' ? '~' : '') + esc(d.value_fmt) + (d.quantity > 1 ? ' × ' + esc(d.quantity) : '') + (d.value_source === 'estimate' ? ' <span class="pmeta" style="display:inline">(' + esc(T.valueOfList.replace('%d', d.value_factor).replace('%%', '%')) + ')</span>' : '')]); }
 		if (d.catalog) {
 			if (d.catalog.aliases && d.catalog.aliases.replace(/\.$/, '') !== d.name) { kv.push([T.official, esc(d.catalog.aliases)]); }
 			if (d.catalog.notes) { kv.push(['ℹ', esc(d.catalog.notes)]); }

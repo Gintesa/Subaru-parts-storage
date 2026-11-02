@@ -54,6 +54,13 @@ class SPS_Settings {
 			'show_quantity'       => empty( $in['show_quantity'] ) ? 0 : 1,
 			'show_location'       => empty( $in['show_location'] ) ? 0 : 1,
 			'remote_images'       => empty( $in['remote_images'] ) ? 0 : 1,
+			'usd_rate'            => isset( $in['usd_rate'] ) && (float) str_replace( ',', '.', $in['usd_rate'] ) > 0 ? round( (float) str_replace( ',', '.', $in['usd_rate'] ), 4 ) : $def['usd_rate'],
+			'value_factors'       => array_map(
+				static function ( $v ) {
+					return max( 0, min( 200, (int) $v ) );
+				},
+				wp_parse_args( isset( $in['value_factors'] ) && is_array( $in['value_factors'] ) ? array_intersect_key( $in['value_factors'], sps_conditions() ) : array(), $def['value_factors'] )
+			),
 			'per_page'            => isset( $in['per_page'] ) ? max( 1, min( 100, (int) $in['per_page'] ) ) : $def['per_page'],
 			'catalog_page_id'     => isset( $in['catalog_page_id'] ) ? absint( $in['catalog_page_id'] ) : 0,
 			'delete_on_uninstall' => empty( $in['delete_on_uninstall'] ) ? 0 : 1,
@@ -102,6 +109,12 @@ class SPS_Settings {
 					<tr><th scope="row"><?php esc_html_e( 'Units', 'subaru-parts-inventory' ); ?></th>
 						<td><select name="<?php echo esc_attr( $n ); ?>[distance_unit]"><option value="km" <?php selected( $s['distance_unit'], 'km' ); ?>>km</option><option value="mi" <?php selected( $s['distance_unit'], 'mi' ); ?>>miles</option></select>
 						<label><?php esc_html_e( 'Currency', 'subaru-parts-inventory' ); ?> <input class="small-text" name="<?php echo esc_attr( $n ); ?>[currency]" value="<?php echo esc_attr( $s['currency'] ); ?>" /></label></td></tr>
+					<tr><th scope="row"><?php esc_html_e( 'Automatic value estimate', 'subaru-parts-inventory' ); ?></th>
+						<td><p class="description"><?php esc_html_e( 'Parts without your own "Estimated value" are valued from the parts.subaru.com list price (USD) × exchange rate × condition %.', 'subaru-parts-inventory' ); ?></p>
+						<p><label>1 USD = <input type="number" step="0.0001" min="0" class="small-text" name="<?php echo esc_attr( $n ); ?>[usd_rate]" value="<?php echo esc_attr( $s['usd_rate'] ); ?>" /> <?php echo esc_html( $s['currency'] ); ?></label></p>
+						<p><?php foreach ( sps_conditions() as $k => $c ) : ?>
+							<label style="margin-right:14px"><?php echo esc_html( $c['label'] ); ?> <input type="number" min="0" max="200" class="small-text" name="<?php echo esc_attr( $n ); ?>[value_factors][<?php echo esc_attr( $k ); ?>]" value="<?php echo esc_attr( (int) ( $s['value_factors'][ $k ] ?? 0 ) ); ?>" /> %</label>
+						<?php endforeach; ?></p></td></tr>
 				</table>
 
 				<h2><?php esc_html_e( 'Public catalogue', 'subaru-parts-inventory' ); ?></h2>
