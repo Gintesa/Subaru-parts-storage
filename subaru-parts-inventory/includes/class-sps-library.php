@@ -15,25 +15,25 @@ defined( 'ABSPATH' ) || exit;
 
 class SPS_Library {
 
-	const DB_VERSION = '1';
+	const DB_VERSION = '2';
 	const BUNDLED    = 'data/subaru-2017-wrx-library.json.gz';
 	const IMG_DIR    = 'sps-library';
 
 	/** Box code per parts.subaru.com top-level category. */
 	const BOXES = array(
-		'Engine and Cooling'           => 'BOX-EN',
-		'Manual Transmission'          => 'BOX-MT',
-		'Driveline and Differential'   => 'BOX-DD',
-		'Suspension and Brakes'        => 'BOX-SB',
-		'Steering'                     => 'BOX-ST',
-		'Electrical'                   => 'BOX-EL',
-		'Body'                         => 'BOX-BD',
-		'Door'                         => 'BOX-DR',
-		'Interior'                     => 'BOX-IN',
-		'Heating and Air Conditioning' => 'BOX-AC',
-		'Maintenance'                  => 'BOX-MA',
-		'Automatic Transmission'       => 'BOX-AT',
-		'Accessories'                  => 'BOX-AX',
+		'Engine and Cooling'           => 'EN',
+		'Manual Transmission'          => 'MT',
+		'Driveline and Differential'   => 'DD',
+		'Suspension and Brakes'        => 'SB',
+		'Steering'                     => 'ST',
+		'Electrical'                   => 'EL',
+		'Body'                         => 'BD',
+		'Door'                         => 'DR',
+		'Interior'                     => 'IN',
+		'Heating and Air Conditioning' => 'AC',
+		'Maintenance'                  => 'MA',
+		'Automatic Transmission'       => 'AT',
+		'Accessories'                  => 'AX',
 	);
 
 	/** Earlier (v1.0–1.2) default top-level categories → parts.subaru.com category. */
@@ -100,6 +100,8 @@ class SPS_Library {
 				diagram_url varchar(255) NOT NULL DEFAULT '',
 				diagram_file varchar(190) NOT NULL DEFAULT '',
 				term_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				section varchar(8) NOT NULL DEFAULT '',
+				section_term bigint(20) unsigned NOT NULL DEFAULT 0,
 				sort int(11) NOT NULL DEFAULT 0,
 				my_ok tinyint(1) NOT NULL DEFAULT 1,
 				part_count int(11) NOT NULL DEFAULT 0,
@@ -304,7 +306,8 @@ class SPS_Library {
 			$cats[] = $acc;
 		}
 
-		$tops   = array();
+		$tops     = array();
+		$used     = array();
 		$asm_rows = array();
 		$occ_rows = array();
 		$parts  = array();
@@ -314,16 +317,35 @@ class SPS_Library {
 			$top_name = (string) $cat['name'];
 			$top_id   = self::ensure_lib_term( $top_name, 0, ( $top_order += 10 ) );
 			$tops[ $top_name ] = $top_id;
-			if ( $top_id && '' === (string) get_term_meta( $top_id, 'sps_box_code', true ) ) {
-				update_term_meta( $top_id, 'sps_box_code', isset( self::BOXES[ $top_name ] ) ? self::BOXES[ $top_name ] : 'BOX-' . strtoupper( substr( preg_replace( '/[^A-Za-z]/', '', $top_name ), 0, 2 ) ) );
-			}
+			$used[ $top_id ]   = true;
+			$sec_terms = array();
 			$asm_order = 0;
 			foreach ( (array) $cat['assemblies'] as $asm ) {
 				$sort++;
 				$range  = self::my_range( (string) $asm['name'] );
 				$my_ok  = self::my_fits( $range, $year ) ? 1 : 0;
 				$pretty = self::pretty( (string) $asm['name'] );
-				$term   = $top_id ? self::ensure_lib_term( $pretty, $top_id, ( $asm_order += 10 ) ) : 0;
+				$sec    = SPS_Sections::classify( $top_name, (string) $asm['name'] );
+				$parent = $top_id;
+				if ( $top_id && '' !== $sec ) {
+					if ( ! isset( $sec_terms[ $sec ] ) ) {
+						$sec_terms[ $sec ] = self::ensure_lib_term( SPS_Sections::term_name( $sec ), $top_id, SPS_Sections::order( $sec ) );
+						if ( $sec_terms[ $sec ] ) {
+							update_term_meta( $sec_terms[ $sec ], 'sps_section', $sec );
+							$used[ $sec_terms[ $sec ] ] = true;
+						}
+					}
+					$parent = $sec_terms[ $sec ] ? $sec_terms[ $sec ] : $top_id;
+				}
+				if ( $parent && $parent !== $top_id && ! term_exists( $pretty, SPS_TAX_CAT, $parent ) ) {
+					// Diagram category from an older version sits directly under the category: move it (keeps its parts).
+					$old = term_exists( $pretty, SPS_TAX_CAT, $top_id );
+					if ( $old ) {
+						wp_update_term( (int) $old['term_id'], SPS_TAX_CAT, array( 'parent' => $parent ) );
+					}
+				}
+				$term   = $parent ? self::ensure_lib_term( $pretty, $parent, ( $asm_order += 10 ) ) : 0;
+				$used[ $term ] = true;
 				$asm_rows[] = array(
 					'code'         => (string) $asm['code'],
 					'name'         => $pretty,
@@ -333,6 +355,8 @@ class SPS_Library {
 					'diagram_url'  => (string) ( $asm['diagram'] ?? '' ),
 					'diagram_file' => (string) ( $asm['diagram_file'] ?? '' ),
 					'term_id'      => (int) $term,
+					'section'      => $sec,
+					'section_term' => (int) ( '' !== $sec && isset( $sec_terms[ $sec ] ) ? $sec_terms[ $sec ] : 0 ),
 					'sort'         => $sort,
 					'my_ok'        => $my_ok,
 					'part_count'   => count( (array) $asm['parts'] ),
@@ -422,6 +446,10 @@ class SPS_Library {
 			self::insert_rows( self::t( 'parts' ), $chunk );
 		}
 		wp_defer_term_counting( false );
+		self::reconcile_terms( array_keys( array_filter( $used ) ) );
+		if ( ! get_option( 'sps_box_mode' ) ) {
+			SPS_Boxes::assign_codes( 'sections' );
+		}
 
 		$stats = array(
 			'parts'      => count( $parts ),
@@ -436,6 +464,111 @@ class SPS_Library {
 		sps_flush_caches();
 		delete_transient( 'sps_oem_tree' );
 		return $stats;
+	}
+
+	/**
+	 * Library categories that are no longer part of the library tree (e.g. diagrams that moved
+	 * under a service-manual section): move their parts, then delete them.
+	 *
+	 * @param int[] $used Term IDs of the current library tree.
+	 */
+	public static function reconcile_terms( array $used ) {
+		global $wpdb;
+		$used  = array_flip( array_map( 'intval', $used ) );
+		$terms = get_terms( array( 'taxonomy' => SPS_TAX_CAT, 'hide_empty' => false, 'meta_key' => 'sps_lib', 'meta_value' => 1 ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+		if ( is_wp_error( $terms ) ) {
+			return;
+		}
+		$stale = array();
+		foreach ( $terms as $t ) {
+			if ( ! isset( $used[ $t->term_id ] ) && 'To Sort (Unidentified)' !== html_entity_decode( $t->name ) ) {
+				$stale[] = $t;
+			}
+		}
+		if ( ! $stale ) {
+			return;
+		}
+		// Deepest first.
+		usort(
+			$stale,
+			static function ( $a, $b ) {
+				return count( get_ancestors( $b->term_id, SPS_TAX_CAT, 'taxonomy' ) ) - count( get_ancestors( $a->term_id, SPS_TAX_CAT, 'taxonomy' ) );
+			}
+		);
+		// Same-named library diagram per top-level category, for parts without a catalog number.
+		$by_name = array();
+		foreach ( array_keys( $used ) as $tid ) {
+			$t = get_term( $tid, SPS_TAX_CAT );
+			if ( $t && ! is_wp_error( $t ) ) {
+				$anc = get_ancestors( $tid, SPS_TAX_CAT, 'taxonomy' );
+				$top = $anc ? end( $anc ) : $tid;
+				$by_name[ $top . '|' . strtolower( html_entity_decode( $t->name ) ) ] = $tid;
+			}
+		}
+		foreach ( $stale as $t ) {
+			$anc  = get_ancestors( $t->term_id, SPS_TAX_CAT, 'taxonomy' );
+			$top  = $anc ? end( $anc ) : 0;
+			$posts = get_posts( array( 'post_type' => SPS_PT, 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids', 'tax_query' => array( array( 'taxonomy' => SPS_TAX_CAT, 'terms' => $t->term_id, 'include_children' => false ) ) ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+			foreach ( $posts as $pid ) {
+				$target = 0;
+				$oem    = self::get( sps_meta( $pid, 'part_number' ) );
+				if ( $oem && $oem['term_id'] && isset( $used[ (int) $oem['term_id'] ] ) ) {
+					$target = (int) $oem['term_id'];
+				} elseif ( isset( $by_name[ $top . '|' . strtolower( html_entity_decode( $t->name ) ) ] ) ) {
+					$target = $by_name[ $top . '|' . strtolower( html_entity_decode( $t->name ) ) ];
+				} elseif ( $top && isset( $used[ $top ] ) ) {
+					$target = $top;
+				}
+				if ( $target ) {
+					wp_set_object_terms( $pid, array( $target ), SPS_TAX_CAT );
+				}
+			}
+			if ( ! get_term_children( $t->term_id, SPS_TAX_CAT ) ) {
+				wp_delete_term( $t->term_id, SPS_TAX_CAT );
+			}
+		}
+		sps_flush_caches();
+	}
+
+	/**
+	 * Representative diagram for a category / section / diagram term (thumbnail).
+	 */
+	public static function term_thumb( $term_id ) {
+		global $wpdb;
+		$term_id = (int) $term_id;
+		$custom  = (string) get_term_meta( $term_id, 'sps_thumb', true );
+		if ( '' !== $custom ) {
+			$a = $wpdb->get_row( $wpdb->prepare( 'SELECT code, diagram_file, diagram_url FROM ' . self::t( 'asm' ) . ' WHERE code = %s', $custom ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+			if ( $a ) {
+				return self::diagram_url( $a );
+			}
+		}
+		$ids = array_merge( array( $term_id ), array_map( 'intval', (array) get_term_children( $term_id, SPS_TAX_CAT ) ) );
+		$in  = implode( ',', array_map( 'intval', $ids ) );
+		$a   = $wpdb->get_row( 'SELECT code, diagram_file, diagram_url FROM ' . self::t( 'asm' ) . " WHERE term_id IN ({$in}) AND (diagram_url <> '' OR diagram_file <> '') ORDER BY my_ok DESC, sort ASC LIMIT 1", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		return $a ? self::diagram_url( $a ) : '';
+	}
+
+	/** Custom images you added (survive re-imports). */
+	public static function custom_images( $type = 'part' ) {
+		$all = get_option( 'diagram' === $type ? 'sps_oem_custom_diag' : 'sps_oem_custom_img', array() );
+		return is_array( $all ) ? $all : array();
+	}
+
+	public static function part_image( array $row ) {
+		$custom = self::custom_images( 'part' );
+		if ( isset( $custom[ $row['pn_norm'] ] ) ) {
+			return self::image_url( $custom[ $row['pn_norm'] ], '' , true );
+		}
+		return self::image_url( $row['image_file'], $row['image_url'] );
+	}
+
+	public static function diagram_url( array $a ) {
+		$custom = self::custom_images( 'diagram' );
+		if ( isset( $custom[ $a['code'] ] ) ) {
+			return self::image_url( $custom[ $a['code'] ], '', true );
+		}
+		return $a['diagram_url'] || $a['diagram_file'] ? self::image_url( $a['diagram_file'], $a['diagram_url'] ) : '';
 	}
 
 	private static function insert_rows( $table, array $rows ) {
@@ -619,7 +752,7 @@ class SPS_Library {
 				'top'     => $a['top'],
 				'ref'     => $a['ref'],
 				'my_ok'   => (int) $a['my_ok'],
-				'diagram' => self::image_url( $a['diagram_file'], $a['diagram_url'] ),
+				'diagram' => self::diagram_url( $a ),
 			);
 		}
 		return array(
@@ -629,7 +762,7 @@ class SPS_Library {
 			'notes'       => (string) $row['notes'],
 			'price'       => null === $row['price'] ? null : (float) $row['price'],
 			'url'         => $row['url'],
-			'image'       => self::image_url( $row['image_file'], $row['image_url'] ),
+			'image'       => self::part_image( $row ),
 			'ref'         => $row['ref'],
 			'asm_code'    => $row['asm_code'],
 			'top'         => $row['top'],
@@ -642,12 +775,12 @@ class SPS_Library {
 	/**
 	 * Image URL: uploaded image pack first, then (if allowed) the online catalog image.
 	 */
-	public static function image_url( $file, $remote ) {
+	public static function image_url( $file, $remote, $bust = false ) {
 		if ( $file ) {
 			$up   = wp_upload_dir( null, false );
 			$path = trailingslashit( $up['basedir'] ) . self::IMG_DIR . '/' . ltrim( $file, '/' );
 			if ( file_exists( $path ) ) {
-				return trailingslashit( $up['baseurl'] ) . self::IMG_DIR . '/' . str_replace( '%2F', '/', rawurlencode( ltrim( $file, '/' ) ) );
+				return trailingslashit( $up['baseurl'] ) . self::IMG_DIR . '/' . str_replace( '%2F', '/', rawurlencode( ltrim( $file, '/' ) ) ) . ( $bust ? '?v=' . filemtime( $path ) : '' );
 			}
 		}
 		return sps_setting( 'remote_images' ) ? (string) $remote : '';
@@ -729,7 +862,7 @@ class SPS_Library {
 				'asm'         => (string) $r['asm_name'],
 				'ref'         => $r['ref'],
 				'price'       => null === $r['price'] ? null : (float) $r['price'],
-				'image'       => self::image_url( $r['image_file'], $r['image_url'] ),
+				'image'       => self::part_image( $r ),
 				'category_id' => (int) $r['term_id'],
 				'my_ok'       => (int) $r['my_ok'],
 			);
@@ -759,14 +892,14 @@ class SPS_Library {
 	}
 
 	/**
-	 * Category → assemblies tree with part and stock counts.
+	 * Category → service-manual section → diagram tree with thumbnails, part and stock counts.
 	 */
 	public static function tree() {
 		global $wpdb;
 		if ( ! self::loaded() ) {
 			return array();
 		}
-		$asm   = $wpdb->get_results( 'SELECT code, name, top, part_count, my_ok, diagram_file, diagram_url FROM ' . self::t( 'asm' ) . ' ORDER BY sort ASC', ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		$asm   = $wpdb->get_results( 'SELECT code, name, top, part_count, my_ok, diagram_file, diagram_url, term_id, section, section_term FROM ' . self::t( 'asm' ) . ' ORDER BY sort ASC', ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
 		$occ   = $wpdb->get_results( 'SELECT asm_code, pn_norm FROM ' . self::t( 'occ' ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
 		$stock = self::stock_index();
 		$have  = array();
@@ -775,28 +908,62 @@ class SPS_Library {
 				$have[ $o['asm_code'] ][ $o['pn_norm'] ] = true;
 			}
 		}
+		$secs = SPS_Sections::all();
 		$tops = array();
 		foreach ( (array) $asm as $a ) {
-			if ( ! isset( $tops[ $a['top'] ] ) ) {
-				$t                  = term_exists( $a['top'], SPS_TAX_CAT, 0 );
-				$tops[ $a['top'] ]  = array(
-					'name'       => $a['top'],
-					'box'        => $t ? (string) get_term_meta( (int) $t['term_id'], 'sps_box_code', true ) : '',
-					'assemblies' => array(),
+			$tk = $a['top'];
+			if ( ! isset( $tops[ $tk ] ) ) {
+				$t           = term_exists( $tk, SPS_TAX_CAT, 0 );
+				$tid         = $t ? (int) $t['term_id'] : 0;
+				$tops[ $tk ] = array(
+					'name'     => $tk,
+					'term_id'  => $tid,
+					'box'      => $tid ? (string) get_term_meta( $tid, 'sps_box_code', true ) : '',
+					'thumb'    => $tid ? self::term_thumb( $tid ) : '',
+					'have'     => 0,
+					'count'    => 0,
+					'sections' => array(),
+				);
+			}
+			$sk = '' !== $a['section'] ? $a['section'] : '_';
+			if ( ! isset( $tops[ $tk ]['sections'][ $sk ] ) ) {
+				$sid                             = (int) $a['section_term'];
+				$tops[ $tk ]['sections'][ $sk ] = array(
+					'code'       => '_' === $sk ? '' : $sk,
+					'name'       => '_' === $sk ? $tk : ( isset( $secs[ $sk ] ) ? $secs[ $sk ] : $sk ),
+					'term_id'    => $sid,
+					'box'        => $sid ? (string) get_term_meta( $sid, 'sps_box_code', true ) : '',
+					'thumb'      => $sid ? self::term_thumb( $sid ) : '',
 					'have'       => 0,
+					'assemblies' => array(),
 				);
 			}
 			$n = isset( $have[ $a['code'] ] ) ? count( $have[ $a['code'] ] ) : 0;
-			$tops[ $a['top'] ]['assemblies'][] = array(
+			$tops[ $tk ]['sections'][ $sk ]['assemblies'][] = array(
 				'code'  => $a['code'],
 				'name'  => $a['name'],
 				'parts' => (int) $a['part_count'],
 				'have'  => $n,
 				'my_ok' => (int) $a['my_ok'],
-				'thumb' => $a['diagram_url'] || $a['diagram_file'] ? self::image_url( $a['diagram_file'], $a['diagram_url'] ) : '',
+				'thumb' => self::diagram_url( $a ),
 			);
-			$tops[ $a['top'] ]['have'] += $n;
+			$tops[ $tk ]['sections'][ $sk ]['have'] += $n;
+			$tops[ $tk ]['have']                    += $n;
+			$tops[ $tk ]['count']++;
 		}
+		foreach ( $tops as &$t ) {
+			$order = array_keys( $secs );
+			uksort(
+				$t['sections'],
+				static function ( $a, $b ) use ( $order ) {
+					$ia = array_search( $a, $order, true );
+					$ib = array_search( $b, $order, true );
+					return ( false === $ia ? 999 : $ia ) - ( false === $ib ? 999 : $ib );
+				}
+			);
+			$t['sections'] = array_values( $t['sections'] );
+		}
+		unset( $t );
 		return array_values( $tops );
 	}
 
@@ -820,7 +987,9 @@ class SPS_Library {
 				'aliases'     => $r['aliases'],
 				'notes'       => (string) $r['notes'],
 				'price'       => null === $r['price'] ? null : (float) $r['price'],
-				'image'       => self::image_url( $r['image_file'], $r['image_url'] ),
+				'image'       => self::part_image( $r ),
+				'has_image'   => '' !== self::part_image( $r ) || '' !== $r['image_url'],
+				'custom_img'  => isset( self::custom_images( 'part' )[ $r['pn_norm'] ] ),
 				'url'         => $r['url'],
 				'category_id' => (int) $a['term_id'],
 				'stock'       => isset( $stock[ $r['pn_norm'] ] ) ? $stock[ $r['pn_norm'] ] : array(),
@@ -833,8 +1002,11 @@ class SPS_Library {
 			'top'     => $a['top'],
 			'my_ok'   => (int) $a['my_ok'],
 			'url'     => $a['url'],
-			'diagram' => $a['diagram_url'] || $a['diagram_file'] ? self::image_url( $a['diagram_file'], $a['diagram_url'] ) : '',
+			'diagram' => self::diagram_url( $a ),
 			'term_id' => (int) $a['term_id'],
+			'section' => $a['section'],
+			'section_term' => (int) $a['section_term'],
+			'top_term' => ( $tt = term_exists( $a['top'], SPS_TAX_CAT, 0 ) ) ? (int) $tt['term_id'] : 0,
 			'parts'   => $parts,
 		);
 	}
@@ -908,6 +1080,154 @@ class SPS_Library {
 		return $n;
 	}
 
+	/**
+	 * Every catalog image (file => remote URL): part pictures, diagrams, accessories.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function image_targets() {
+		global $wpdb;
+		$out  = array();
+		$rows = $wpdb->get_results( 'SELECT image_file AS f, image_url AS u FROM ' . self::t( 'parts' ) . " WHERE image_file <> '' AND image_url <> ''", ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		$rows = array_merge( (array) $rows, (array) $wpdb->get_results( 'SELECT diagram_file AS f, diagram_url AS u FROM ' . self::t( 'asm' ) . " WHERE diagram_file <> '' AND diagram_url <> ''", ARRAY_A ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		foreach ( $rows as $r ) {
+			$f = ltrim( (string) $r['f'], '/' );
+			if ( preg_match( '#^images/(parts|diagrams|accessories|gear)/[^/\\\\]+\.(jpe?g|png|gif|webp)$#i', $f ) && ! isset( $out[ $f ] ) ) {
+				$out[ $f ] = (string) $r['u'];
+			}
+		}
+		ksort( $out );
+		return $out;
+	}
+
+	/**
+	 * @return array{total:int,local:int,failed:int,remaining:int}
+	 */
+	public static function image_status() {
+		$targets = self::image_targets();
+		$dir     = self::image_dir() . '/';
+		$failed  = (array) get_option( 'sps_img_failed', array() );
+		$local   = 0;
+		foreach ( array_keys( $targets ) as $f ) {
+			if ( file_exists( $dir . $f ) ) {
+				$local++;
+			}
+		}
+		$total = count( $targets );
+		return array(
+			'total'     => $total,
+			'local'     => $local,
+			'failed'    => count( $failed ),
+			'remaining' => max( 0, $total - $local - count( $failed ) ),
+		);
+	}
+
+	/**
+	 * Download the next batch of catalog images from the parts.subaru.com image server.
+	 * Small batches keep each request short (shared hosting friendly).
+	 *
+	 * @return array{fetched:int,errors:string[],status:array}
+	 */
+	public static function fetch_batch( $max = 12, $seconds = 20 ) {
+		$start   = microtime( true );
+		$dir     = self::image_dir() . '/';
+		$failed  = (array) get_option( 'sps_img_failed', array() );
+		$fetched    = 0;
+		$errors     = array();
+		$net_errors = 0;
+		$network    = false;
+		foreach ( self::image_targets() as $f => $url ) {
+			if ( $fetched >= $max || microtime( true ) - $start > $seconds ) {
+				break;
+			}
+			if ( file_exists( $dir . $f ) || isset( $failed[ $f ] ) ) {
+				continue;
+			}
+			$res = wp_safe_remote_get( $url, array( 'timeout' => 15, 'redirection' => 3 ) );
+			if ( is_wp_error( $res ) || (int) wp_remote_retrieve_response_code( $res ) >= 500 || 429 === (int) wp_remote_retrieve_response_code( $res ) ) {
+				// Network / server trouble: not the image's fault – stop this batch, try again later.
+				$net_errors++;
+				$errors[] = basename( $f ) . ': ' . ( is_wp_error( $res ) ? $res->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code( $res ) );
+				if ( $net_errors >= 3 ) {
+					$network = true;
+					break;
+				}
+				continue;
+			}
+			$code = (int) wp_remote_retrieve_response_code( $res );
+			$body = wp_remote_retrieve_body( $res );
+			if ( 200 !== $code || '' === $body || ! @getimagesizefromstring( $body ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors
+				$failed[ $f ] = 'HTTP ' . $code;
+				$errors[]     = basename( $f ) . ': ' . __( 'not available on the image server', 'subaru-parts-inventory' );
+				continue;
+			}
+			wp_mkdir_p( dirname( $dir . $f ) );
+			if ( false !== file_put_contents( $dir . $f, $body ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions
+				$fetched++;
+			}
+		}
+		update_option( 'sps_img_failed', $failed, false );
+		return array( 'fetched' => $fetched, 'errors' => array_slice( $errors, 0, 10 ), 'network' => $network, 'status' => self::image_status() );
+	}
+
+	public static function retry_failed_images() {
+		delete_option( 'sps_img_failed' );
+	}
+
+	/**
+	 * Save a picture you took for a catalog part (type "part", key = part number) or a
+	 * diagram (type "diagram", key = diagram code). Stored in uploads/sps-library/images/custom/.
+	 *
+	 * @param string $type    part|diagram.
+	 * @param string $key     Part number or diagram code.
+	 * @param string $tmp     Path to the uploaded / existing image file.
+	 * @return string|WP_Error Public URL.
+	 */
+	public static function save_custom_image( $type, $key, $tmp ) {
+		$info = @getimagesize( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+		if ( ! $info || ! in_array( $info[2], array( IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP ), true ) ) {
+			return new WP_Error( 'sps_img', __( 'That file is not a JPG, PNG, GIF or WebP image.', 'subaru-parts-inventory' ) );
+		}
+		$ext  = array( IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp' )[ $info[2] ];
+		$key  = 'diagram' === $type ? preg_replace( '/[^A-Za-z0-9_-]/', '', $key ) : sps_normalize_number( $key );
+		if ( '' === $key ) {
+			return new WP_Error( 'sps_img', __( 'Missing part number.', 'subaru-parts-inventory' ) );
+		}
+		$rel  = 'images/custom/' . ( 'diagram' === $type ? 'diagram-' : '' ) . $key . '.' . $ext;
+		$path = self::image_dir() . '/' . $rel;
+		wp_mkdir_p( dirname( $path ) );
+		// Downscale very large photos.
+		$editor = wp_get_image_editor( $tmp );
+		if ( ! is_wp_error( $editor ) ) {
+			$size = $editor->get_size();
+			if ( $size['width'] > 1600 || $size['height'] > 1600 ) {
+				$editor->resize( 1600, 1600, false );
+			}
+			$saved = $editor->save( $path );
+			if ( is_wp_error( $saved ) ) {
+				return $saved;
+			}
+		} elseif ( ! copy( $tmp, $path ) ) {
+			return new WP_Error( 'sps_img', __( 'Could not save the image.', 'subaru-parts-inventory' ) );
+		}
+		$opt         = 'diagram' === $type ? 'sps_oem_custom_diag' : 'sps_oem_custom_img';
+		$all         = (array) get_option( $opt, array() );
+		$all[ $key ] = $rel;
+		update_option( $opt, $all, false );
+		return self::image_url( $rel, '', true );
+	}
+
+	public static function remove_custom_image( $type, $key ) {
+		$opt = 'diagram' === $type ? 'sps_oem_custom_diag' : 'sps_oem_custom_img';
+		$key = 'diagram' === $type ? preg_replace( '/[^A-Za-z0-9_-]/', '', $key ) : sps_normalize_number( $key );
+		$all = (array) get_option( $opt, array() );
+		if ( isset( $all[ $key ] ) ) {
+			@unlink( self::image_dir() . '/' . $all[ $key ] ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+			unset( $all[ $key ] );
+			update_option( $opt, $all, false );
+		}
+	}
+
 	/* ------------------------------------------------------------------ */
 	/* Admin panel                                                         */
 	/* ------------------------------------------------------------------ */
@@ -939,6 +1259,7 @@ class SPS_Library {
 				<?php if ( ! $img['parts'] && ! $img['diagrams'] ) : ?>
 					<?php echo sps_setting( 'remote_images' ) ? esc_html__( 'Until you upload them, images are shown from the parts.subaru.com image server.', 'subaru-parts-inventory' ) : esc_html__( 'Online images are switched off in Settings, so no catalog images are shown yet.', 'subaru-parts-inventory' ); ?>
 				<?php endif; ?></p>
+			<p><strong><?php esc_html_e( 'Recommended:', 'subaru-parts-inventory' ); ?></strong> <?php esc_html_e( 'open the parts page → Tools → "Download catalog images to this site". It copies all images from the parts.subaru.com image server in small batches – no big upload needed.', 'subaru-parts-inventory' ); ?></p>
 			<form method="post" enctype="multipart/form-data" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="sps_oem_images" />
 				<?php wp_nonce_field( 'sps_oem_images' ); ?>
@@ -961,9 +1282,11 @@ class SPS_Library {
 			wp_die( esc_html__( 'Not allowed.', 'subaru-parts-inventory' ) );
 		}
 		if ( ! empty( $_POST['bundled'] ) ) {
+			delete_option( 'sps_oem_custom_source' );
 			$data = self::read( self::bundled_path() );
 		} elseif ( ! empty( $_FILES['library']['tmp_name'] ) && is_uploaded_file( $_FILES['library']['tmp_name'] ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 			$data = self::read( $_FILES['library']['tmp_name'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+			update_option( 'sps_oem_custom_source', 1 );
 		} else {
 			self::back( __( 'Choose a library file first.', 'subaru-parts-inventory' ) );
 		}

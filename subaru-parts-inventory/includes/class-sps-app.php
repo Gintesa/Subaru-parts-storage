@@ -354,10 +354,11 @@ class SPS_App {
 		ob_start();
 		?>
 		<p class="hint"><?php echo esc_html( sprintf( /* translators: 1: vehicle, 2: parts, 3: diagrams */ __( 'Official parts.subaru.com catalog for %1$s: %2$s parts on %3$s diagrams. Pick a diagram, then tap "+ Add" on a part you have.', 'subaru-parts-inventory' ), $meta['vehicle'] ?? '', number_format_i18n( (int) ( $meta['parts'] ?? 0 ) ), number_format_i18n( (int) ( $meta['assemblies'] ?? 0 ) ) ) ); ?></p>
-		<div class="chips" data-cat-tops></div>
-		<input type="search" data-cat-filter placeholder="<?php esc_attr_e( 'Filter diagrams…', 'subaru-parts-inventory' ); ?>" autocomplete="off">
-		<div class="asm-list" data-asm-list></div>
+		<input type="search" data-cat-filter placeholder="<?php esc_attr_e( 'Find a diagram (e.g. turbo, door, seat)…', 'subaru-parts-inventory' ); ?>" autocomplete="off">
+		<nav class="crumbs" data-crumbs></nav>
+		<div class="tile-grid" data-tiles></div>
 		<div class="asm-view" data-asm-view hidden></div>
+		<input type="file" accept="image/*" data-lib-file hidden>
 		<?php
 		return ob_get_clean();
 	}
@@ -394,7 +395,25 @@ class SPS_App {
 			'labels'   => admin_url( 'edit.php?post_type=' . SPS_PT . '&page=sps-labels' ),
 			'settings' => admin_url( 'edit.php?post_type=' . SPS_PT . '&page=sps-settings' ),
 		);
-		$html = '<div class="figs" data-tool-figs></div><div class="tool-links">';
+		$html = '<div class="figs" data-tool-figs></div>';
+		if ( current_user_can( SPS_CAP ) ) {
+			$html .= '<div class="tool-box" data-img-tool><h3>' . esc_html__( 'Catalog images', 'subaru-parts-inventory' ) . '</h3>'
+				. '<p class="hint">' . esc_html__( 'Copies all part pictures and diagrams from the parts.subaru.com image server to this website, a few at a time. Keep this page open until it finishes; you can stop and continue later.', 'subaru-parts-inventory' ) . '</p>'
+				. '<div class="progress"><i data-img-bar></i></div><div class="hint" data-img-status></div>'
+				. '<div class="row-btns"><button type="button" class="btn mini" data-action="img-fetch">' . esc_html__( 'Download catalog images to this site', 'subaru-parts-inventory' ) . '</button>'
+				. '<button type="button" class="btn faint mini" data-action="img-stop" hidden>' . esc_html__( 'Stop', 'subaru-parts-inventory' ) . '</button>'
+				. '<button type="button" class="btn faint mini" data-action="img-retry" hidden>' . esc_html__( 'Retry failed', 'subaru-parts-inventory' ) . '</button></div></div>';
+			$html .= '<div class="tool-box" data-box-tool><h3>' . esc_html__( 'Clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</h3>'
+				. '<p class="hint">' . esc_html__( 'Removes all box codes, merges duplicate categories, deletes empty leftover categories, files every part into its catalog diagram and creates a fresh, unique box scheme. Box labels must be reprinted afterwards.', 'subaru-parts-inventory' ) . '</p>'
+				. '<div class="warn" data-box-dupes hidden></div><div class="svc-pick box-mode">';
+			foreach ( SPS_Boxes::modes() as $k => $label ) {
+				$html .= '<label' . ( get_option( 'sps_box_mode', 'sections' ) === $k ? ' class="on"' : '' ) . '><input type="radio" name="sps_box_mode" value="' . esc_attr( $k ) . '"' . checked( get_option( 'sps_box_mode', 'sections' ), $k, false ) . '>' . esc_html( $label ) . '</label>';
+			}
+			$html .= '</div><label class="checkline"><input type="checkbox" data-box-opt="delete_empty" checked> ' . esc_html__( 'Delete empty categories that are not from the Subaru catalog', 'subaru-parts-inventory' ) . '</label>'
+				. '<label class="checkline"><input type="checkbox" data-box-opt="unbox"> ' . esc_html__( 'Mark all boxed parts as "Not boxed yet" (I will re-sort them)', 'subaru-parts-inventory' ) . '</label>'
+				. '<div class="row-btns"><button type="button" class="btn danger mini" data-action="box-cleanup">' . esc_html__( 'Clean up & rebuild boxes', 'subaru-parts-inventory' ) . '</button></div><div class="hint" data-box-report></div></div>';
+		}
+		$html .= '<div class="tool-links">';
 		foreach ( $links as $key => $label ) {
 			if ( in_array( $key, array( 'cats', 'import', 'settings' ), true ) && ! current_user_can( SPS_CAP ) ) {
 				continue;
@@ -522,6 +541,22 @@ class SPS_App {
 			'noDiagrams'   => __( 'No diagrams match.', 'subaru-parts-inventory' ),
 			'close'        => __( 'Close', 'subaru-parts-inventory' ),
 			'otherMYshort' => __( 'other MY', 'subaru-parts-inventory' ),
+			'allCatsCrumb' => __( 'All categories', 'subaru-parts-inventory' ),
+			'diagrams'     => __( 'diagrams', 'subaru-parts-inventory' ),
+			'sections'     => __( 'sub-boxes', 'subaru-parts-inventory' ),
+			'setThumb'     => __( 'Use as thumbnail for', 'subaru-parts-inventory' ),
+			'thumbSet'     => __( 'Thumbnail updated', 'subaru-parts-inventory' ),
+			'addPic'       => __( '📷 Add picture', 'subaru-parts-inventory' ),
+			'replacePic'   => __( '📷 Replace', 'subaru-parts-inventory' ),
+			'addDiagram'   => __( '📷 Add / replace diagram image', 'subaru-parts-inventory' ),
+			'picSaved'     => __( 'Picture saved to the library', 'subaru-parts-inventory' ),
+			'useMyPhoto'   => __( 'Use my photo as catalog picture', 'subaru-parts-inventory' ),
+			'imgStatus'    => __( '%1$d of %2$d images on this site · %3$d not available', 'subaru-parts-inventory' ),
+			'imgDone'      => __( 'All available catalog images are on this site.', 'subaru-parts-inventory' ),
+			'confirmClean' => __( 'Remove all box codes and rebuild them? Box labels must be reprinted.', 'subaru-parts-inventory' ),
+			'cleanReport'  => __( 'Done: %1$d boxes, %2$d duplicates merged, %3$d empty categories deleted, %4$d parts re-filed, %5$d old box overrides cleared, %6$d parts set to Not boxed.', 'subaru-parts-inventory' ),
+			'dupeBoxes'    => __( 'Duplicate box codes found:', 'subaru-parts-inventory' ),
+			'working'      => __( 'Working…', 'subaru-parts-inventory' ),
 			'usedLbl'      => __( 'Used', 'subaru-parts-inventory' ),
 		);
 	}

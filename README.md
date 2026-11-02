@@ -25,11 +25,33 @@ The plugin is in [`subaru-parts-inventory/`](subaru-parts-inventory/).
 
 The plugin ships the complete parts.subaru.com catalog for the 2017 WRX 2.0L 6MT Limited (`data/subaru-2017-wrx-library.json.gz`): 3,495 OEM part numbers on 445 diagrams in 12 categories, plus 69 genuine accessories. It installs itself on the first admin page load after activating or updating the plugin.
 
-- **Categories = parts.subaru.com.** The 12 top-level categories are your boxes (BOX-EN Engine and Cooling, BOX-MT, BOX-DD, BOX-SB, BOX-ST, BOX-EL, BOX-BD, BOX-DR, BOX-IN, BOX-AC, BOX-MA Maintenance, BOX-AT, BOX-AX Accessories). Each diagram is a sub-category. Parts from earlier versions are moved over automatically, and unused old categories are removed.
+- **Categories = parts.subaru.com.** The 12 top-level categories (Engine and Cooling, Manual Transmission, Suspension and Brakes, Electrical, Body, …) contain service-manual sections, and those contain the diagrams (see *Boxes* below). Parts from earlier versions are moved over automatically, and unused old categories are removed.
 - **Where a part goes:** a part listed on several diagrams is filed under the real diagram rather than the Maintenance shortcut list, preferring diagrams that apply to MY2017. Diagrams for other model years are marked "other MY".
 - **In the app:** the *Subaru catalog* section lets you browse diagrams, see what you already have, and tap **+ Add**. Typing a name in *Add a part* searches the catalog. Part cards show the official name, notes, US list price, catalog picture and every diagram with its callout number.
 - **Images:** upload the `subaru_2017_wrx_images_partN.zip` files under *Import / Export → Catalog images*, or copy the `images/` folder to `wp-content/uploads/sps-library/images/`. Until then, images load from the parts.subaru.com image server; this can be switched off in Settings.
 - **Updating:** import a newer library JSON with the same structure on the same page.
+
+## Boxes: categories and service-manual sub-boxes
+
+Inside each parts.subaru.com category, the diagrams are grouped by Subaru **service-manual section**: FU, EC, IN, ME, EX, CO, LU, SP, IG, SC, EN · CS, 6MT, CL · FS, RS, WT, TPM, DI, DS, VDC, BR, PB, PS · AC, AB, SB, LI, WW, ET, GW, BS, IDI, SE, SL, SR, EI, EB, WI, GN. Diagnostics-only "(diag)" sections are not used.
+
+- **Sub-box mode** (default): box codes are `EN-FU`, `EN-IN`, `EN-ME`, `SB-BR`, `EL-LI`, … Accessories stays one box (`AX`).
+- **Category mode:** one box per category (`EN`, `SB`, `EL`, …).
+- **Tools → Clean up & rebuild boxes** (in the parts app) does the following, then reloads the page:
+  - removes every box code;
+  - merges duplicate categories;
+  - deletes empty categories that are not from the Subaru catalog;
+  - files every part with a catalog number into its diagram;
+  - clears box overrides that point at codes which no longer exist;
+  - optionally marks all parts as "Not boxed yet";
+  - assigns a fresh, unique scheme.
+- Reprint box labels after rebuilding.
+
+## Catalog images
+
+- **Tools → Download catalog images to this site** copies all ~3,000 part pictures and diagrams from the parts.subaru.com image server to `wp-content/uploads/sps-library/images/`, 12 at a time. No big upload is needed, so it avoids hosting upload limits and plugins that load whole uploads into memory. You can stop and continue later. Images the server doesn't have are reported; network errors just pause the download.
+- **Add missing pictures:** in the Subaru catalog, use **📷 Add picture** on any part, or **📷 Add / replace diagram image**. On a part card, **Use my photo as catalog picture** copies one of your own photos. Your pictures are stored in `images/custom/` and survive catalog re-imports.
+- **Thumbnails:** every category, sub-box and diagram shows a diagram thumbnail in the catalog browser and on box cards. In a diagram, **Use as thumbnail for …** picks a different one.
 
 ## Part-number library (auto names & boxes)
 

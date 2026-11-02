@@ -209,6 +209,110 @@ class SPS_REST {
 		);
 		register_rest_route(
 			self::NS,
+			'/library/images',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function () {
+					return rest_ensure_response( SPS_Library::image_status() );
+				},
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/library/images/fetch',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => static function ( WP_REST_Request $request ) {
+					if ( $request['retry'] ) {
+						SPS_Library::retry_failed_images();
+					}
+					return rest_ensure_response( SPS_Library::fetch_batch( 12, 20 ) );
+				},
+				'permission_callback' => static function () {
+					return current_user_can( SPS_CAP );
+				},
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/library/image',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, 'library_image' ),
+					'permission_callback' => static function () {
+						return current_user_can( SPS_EDIT_CAP ) && current_user_can( 'upload_files' );
+					},
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => static function ( WP_REST_Request $request ) {
+						SPS_Library::remove_custom_image( 'diagram' === $request['type'] ? 'diagram' : 'part', (string) $request['key'] );
+						return rest_ensure_response( array( 'removed' => true ) );
+					},
+					'permission_callback' => static function () {
+						return current_user_can( SPS_EDIT_CAP );
+					},
+				),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/library/thumb',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => static function ( WP_REST_Request $request ) {
+					$tid = (int) $request['term_id'];
+					if ( ! $tid || ! term_exists( $tid, SPS_TAX_CAT ) ) {
+						return new WP_Error( 'sps_not_found', __( 'Category not found.', 'subaru-parts-inventory' ), array( 'status' => 404 ) );
+					}
+					update_term_meta( $tid, 'sps_thumb', preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $request['code'] ) );
+					return rest_ensure_response( array( 'thumb' => SPS_Library::term_thumb( $tid ) ) );
+				},
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+			)
+		);
+		register_rest_route(
+			self::NS,
+			'/boxes/cleanup',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => static function () {
+						return rest_ensure_response(
+							array(
+								'mode'       => get_option( 'sps_box_mode', 'sections' ),
+								'modes'      => SPS_Boxes::modes(),
+								'duplicates' => SPS_Boxes::duplicate_codes(),
+								'cleaned'    => get_option( 'sps_boxes_cleaned', '' ),
+							)
+						);
+					},
+					'permission_callback' => array( __CLASS__, 'can_manage' ),
+				),
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => static function ( WP_REST_Request $request ) {
+						return rest_ensure_response(
+							SPS_Boxes::cleanup(
+								array(
+									'mode'         => (string) $request['mode'],
+									'delete_empty' => (bool) $request['delete_empty'],
+									'unbox'        => (bool) $request['unbox'],
+									'refile'       => true,
+								)
+							)
+						);
+					},
+					'permission_callback' => static function () {
+						return current_user_can( SPS_CAP );
+					},
+				),
+			)
+		);
+		register_rest_route(
+			self::NS,
 			'/library/search',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -378,6 +482,34 @@ class SPS_REST {
 		return rest_ensure_response( sps_part_data( $id, 'admin' ) );
 	}
 
+	/**
+	 * Add a picture to the catalog: multipart "file", or "attachment_id" (one of your part photos).
+	 */
+	public static function library_image( WP_REST_Request $request ) {
+		$type = 'diagram' === $request['type'] ? 'diagram' : 'part';
+		$key  = (string) $request['key'];
+		$tmp  = '';
+		$files = $request->get_file_params();
+		if ( ! empty( $files['file']['tmp_name'] ) && is_uploaded_file( $files['file']['tmp_name'] ) ) {
+			$tmp = $files['file']['tmp_name'];
+		} elseif ( $request['attachment_id'] ) {
+			$att = (int) $request['attachment_id'];
+			if ( ! current_user_can( 'edit_post', $att ) ) {
+				return new WP_Error( 'sps_forbidden', __( 'Not allowed.', 'subaru-parts-inventory' ), array( 'status' => 403 ) );
+			}
+			$tmp = (string) get_attached_file( $att );
+		}
+		if ( '' === $tmp || ! file_exists( $tmp ) ) {
+			return new WP_Error( 'sps_no_file', __( 'No image received.', 'subaru-parts-inventory' ), array( 'status' => 400 ) );
+		}
+		$url = SPS_Library::save_custom_image( $type, $key, $tmp );
+		if ( is_wp_error( $url ) ) {
+			$url->add_data( array( 'status' => 400 ) );
+			return $url;
+		}
+		return rest_ensure_response( array( 'url' => $url ) );
+	}
+
 	public static function trash_part( WP_REST_Request $request ) {
 		$id = (int) $request['id'];
 		if ( SPS_PT !== get_post_type( $id ) ) {
@@ -534,6 +666,7 @@ class SPS_REST {
 				'order'     => (int) get_term_meta( $term->term_id, 'sps_order', true ),
 				'depth'     => count( get_ancestors( $term->term_id, SPS_TAX_CAT, 'taxonomy' ) ),
 				'label_url' => $manager ? SPS_Labels::print_url( array( $term->term_id ), 'box' ) : '',
+				'thumb'     => class_exists( 'SPS_Library' ) && SPS_Library::loaded() ? SPS_Library::term_thumb( $term->term_id ) : '',
 			);
 		}
 		usort(

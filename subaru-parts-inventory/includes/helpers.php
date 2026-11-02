@@ -848,6 +848,10 @@ function sps_category_tree() {
  */
 function sps_run_upgrades( $from ) {
 	global $wpdb;
+	if ( '' !== $from && version_compare( $from, '1.4.0', '<' ) ) {
+		// 1.4.0: diagrams are regrouped under service-manual sections; rebuild the tree on the next admin load.
+		update_option( 'sps_oem_reimport', 1 );
+	}
 	if ( '' === $from || version_compare( $from, '1.2.0', '>=' ) ) {
 		return;
 	}

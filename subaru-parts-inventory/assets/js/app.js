@@ -351,6 +351,9 @@
 		if (kv.length) {
 			h += '<dl class="kv">' + kv.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + r[1] + '</dd>'; }).join('') + '</dl>';
 		}
+		if (M && C.canUpload && d.catalog && !d.catalog.image && d.images && d.images[0]) {
+			h += '<div class="diag-row"><button type="button" class="btn faint mini" data-photo-to-lib="' + esc(d.images[0].id) + '" data-pn="' + esc(d.part_number) + '">📷 ' + esc(T.useMyPhoto) + '</button></div>';
+		}
 		if (d.catalog && d.catalog.diagrams && d.catalog.diagrams.length) {
 			h += '<div class="diag-row">' + diagramBtns(d.catalog.diagrams) + '</div>';
 		}
@@ -440,6 +443,7 @@
 			count('boxes', list.length + ' ' + T.boxes.toLowerCase());
 			grid.innerHTML = list.map(function (b) {
 				return '<div class="box-card' + (b.count ? '' : ' empty') + '" data-box="' + b.id + '" role="button" tabindex="0">' +
+					(b.thumb ? '<div class="box-thumb"><img src="' + esc(b.thumb) + '" alt="" loading="lazy"></div>' : '') +
 					'<div class="bc">' + esc(b.code) + '<span>' + esc(b.count) + ' ' + esc(T.inBox) + '</span></div>' +
 					'<div class="bn">' + esc(b.path) + '</div>' + (b.location ? '<div class="bl">⌖ ' + esc(b.location) + '</div>' : '') +
 					(b.children.length ? '<div class="bk">' + esc(b.children.join(' · ')) + '</div>' : '') +
@@ -1167,84 +1171,158 @@
 	});
 
 	/* ------------------------------------------------------------------ */
-	/* Subaru catalog browser                                              */
+	/* Subaru catalog browser: category → sub-box (section) → diagram       */
 	/* ------------------------------------------------------------------ */
-	var cat = { tree: null, top: '', filter: '' };
-	var asmList = $('[data-asm-list]');
+	var cat = { tree: null, top: null, sec: null, filter: '', asm: null };
+	var tiles = $('[data-tiles]');
 	var asmView = $('[data-asm-view]');
+	var crumbs = $('[data-crumbs]');
+	var libFile = $('[data-lib-file]');
+	function tile(o) {
+		return '<button type="button" class="tile' + (o.dim ? ' dim' : '') + '" ' + o.attr + '>' +
+			'<span class="tile-img">' + (o.thumb ? '<img src="' + esc(o.thumb) + '" alt="" loading="lazy">' : icon('box')) + '</span>' +
+			'<span class="tile-body">' + (o.box ? '<span class="tile-box">' + esc(o.box) + '</span>' : '') +
+			'<span class="tile-name">' + esc(o.name) + '</span><span class="tile-meta">' + o.meta + '</span></span></button>';
+	}
+	function haveTag(n) { return n ? ' · <span class="ok">' + esc(T.have) + ' ' + esc(n) + '</span>' : ''; }
+	function findTop(name) { return (cat.tree || []).filter(function (t) { return t.name === name; })[0]; }
 	function loadCatalog() {
 		return api('library/tree').then(function (res) {
 			cat.tree = res.categories || [];
-			if (!cat.top && cat.tree.length) { cat.top = cat.tree[0].name; }
 			var total = 0;
-			cat.tree.forEach(function (t) { total += t.assemblies.length; });
-			count('cat', total + ' ' + T.diagram.toLowerCase() + 's');
-			renderCatTops();
-			renderAsmList();
-		}).catch(function (e) { asmList.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
+			cat.tree.forEach(function (t) { total += t.count; });
+			count('cat', total + ' ' + T.diagrams);
+			renderCat();
+		}).catch(function (e) { tiles.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
 	}
-	function renderCatTops() {
-		$('[data-cat-tops]').innerHTML = cat.tree.map(function (t) {
-			return '<button type="button" class="chip' + (t.name === cat.top ? ' on' : '') + '" data-top="' + esc(t.name) + '">' + esc(t.name) + (t.have ? ' · ' + t.have : '') + '</button>';
-		}).join('');
+	function renderCrumbs() {
+		var h = '<button type="button" data-crumb="root">' + esc(T.allCatsCrumb) + '</button>';
+		if (cat.top) { h += ' › <button type="button" data-crumb="top">' + esc(cat.top) + '</button>'; }
+		if (cat.top && cat.sec !== null) {
+			var t = findTop(cat.top), s = t && t.sections[cat.sec];
+			if (s && t.sections.length > 1) { h += ' › <button type="button" data-crumb="sec">' + esc((s.code ? s.code + ' – ' : '') + s.name) + '</button>'; }
+		}
+		if (cat.asm) { h += ' › <span>' + esc(cat.asm) + '</span>'; }
+		crumbs.innerHTML = h;
 	}
-	function renderAsmList() {
+	function renderCat() {
 		asmView.hidden = true;
-		asmList.hidden = false;
+		tiles.hidden = false;
+		cat.asm = null;
 		var f = cat.filter.toLowerCase();
-		var rows = [];
-		cat.tree.forEach(function (t) {
-			if (!f && t.name !== cat.top) { return; }
-			t.assemblies.forEach(function (a) {
-				if (f && a.name.toLowerCase().indexOf(f) === -1 && a.code.toLowerCase().indexOf(f) === -1) { return; }
-				rows.push('<button type="button" class="asm-row' + (a.my_ok ? '' : ' other-my') + '" data-asm-open="' + esc(a.code) + '">' +
-					'<span class="asm-name">' + esc(a.name) + (f ? ' <span class="pmeta" style="display:inline">· ' + esc(t.name) + '</span>' : '') + '</span>' +
-					'<span class="tag">' + esc(a.parts) + '</span>' + (a.have ? '<span class="tag ok">' + esc(T.have) + ' ' + esc(a.have) + '</span>' : '<span></span>') + '</button>');
+		var html = '';
+		if (f) {
+			(cat.tree || []).forEach(function (t) {
+				t.sections.forEach(function (s) {
+					s.assemblies.forEach(function (a) {
+						if (a.name.toLowerCase().indexOf(f) === -1 && a.code.toLowerCase().indexOf(f) === -1 && s.name.toLowerCase().indexOf(f) === -1) { return; }
+						html += tile({ attr: 'data-asm-open="' + esc(a.code) + '"', thumb: a.thumb, name: a.name, box: s.box || t.box, dim: !a.my_ok,
+							meta: esc(t.name) + ' · ' + esc(a.parts) + ' ' + esc(T.parts.toLowerCase()) + haveTag(a.have) });
+					});
+				});
 			});
-		});
-		asmList.innerHTML = rows.length ? rows.join('') : '<p class="empty-note">' + esc(T.noDiagrams) + '</p>';
+		} else if (!cat.top) {
+			(cat.tree || []).forEach(function (t) {
+				html += tile({ attr: 'data-top-open="' + esc(t.name) + '"', thumb: t.thumb, name: t.name, box: t.box,
+					meta: (t.sections.length > 1 ? esc(t.sections.length) + ' ' + esc(T.sections) + ' · ' : '') + esc(t.count) + ' ' + esc(T.diagrams) + haveTag(t.have) });
+			});
+		} else {
+			var t = findTop(cat.top);
+			if (t && t.sections.length > 1 && cat.sec === null) {
+				t.sections.forEach(function (s, i) {
+					html += tile({ attr: 'data-sec-open="' + i + '"', thumb: s.thumb, name: s.name, box: s.box || s.code,
+						meta: esc(s.assemblies.length) + ' ' + esc(T.diagrams) + haveTag(s.have) });
+				});
+			} else if (t) {
+				var s = t.sections[cat.sec === null ? 0 : cat.sec];
+				(s ? s.assemblies : []).forEach(function (a) {
+					html += tile({ attr: 'data-asm-open="' + esc(a.code) + '"', thumb: a.thumb, name: a.name, dim: !a.my_ok,
+						meta: esc(a.parts) + ' ' + esc(T.parts.toLowerCase()) + (a.my_ok ? '' : ' · ' + esc(T.otherMYshort)) + haveTag(a.have) });
+				});
+			}
+		}
+		tiles.innerHTML = html || '<p class="empty-note">' + esc(T.noDiagrams) + '</p>';
+		renderCrumbs();
 	}
 	function openAssembly(code) {
-		asmList.hidden = true;
+		tiles.hidden = true;
 		asmView.hidden = false;
 		asmView.innerHTML = '<p class="empty-note"><span class="spinner"></span></p>';
 		api('library/assembly/' + encodeURIComponent(code)).then(function (a) {
-			var h = '<div class="asm-head"><button type="button" class="btn faint mini" data-asm-back>' + esc(T.backToList) + '</button>' +
-				'<div><div class="pn">' + esc(a.code) + '</div><div class="pname">' + esc(a.name) + '</div><div class="pmeta">' + esc(a.top) + (a.my_ok ? '' : ' · ⚠ ' + esc(T.otherMY)) + '</div></div></div>';
+			cat.asm = a.name;
+			if (!cat.top) { cat.top = a.top; }
+			renderCrumbs();
+			asmView._asm = a;
+			var h = '<div class="asm-head"><div><div class="pn">' + esc(a.code) + '</div><div class="pname">' + esc(a.name) + '</div><div class="pmeta">' + esc(a.top) + (a.my_ok ? '' : ' · ⚠ ' + esc(T.otherMY)) + '</div></div></div>';
 			if (a.diagram) {
 				h += '<button type="button" class="asm-diagram" data-diagram="' + esc(a.diagram) + '" data-dtitle="' + esc(a.code + ' – ' + a.name) + '"><img src="' + esc(a.diagram) + '" alt="' + esc(a.name) + '" loading="lazy"></button>';
 			}
+			h += '<div class="row-btns asm-tools">';
+			if (a.diagram) {
+				if (a.section_term) { h += '<button type="button" class="btn faint mini" data-thumb-term="' + a.section_term + '">' + esc(T.setThumb) + ' ' + esc(a.section) + '</button>'; }
+				if (a.top_term) { h += '<button type="button" class="btn faint mini" data-thumb-term="' + a.top_term + '">' + esc(T.setThumb) + ' ' + esc(a.top) + '</button>'; }
+			}
+			if (C.canUpload) { h += '<button type="button" class="btn faint mini" data-lib-pic="diagram" data-lib-key="' + esc(a.code) + '">' + esc(T.addDiagram) + '</button>'; }
+			h += '</div>';
 			h += '<div class="asm-parts">' + a.parts.map(function (p) {
 				var have = p.stock.length ? p.stock.map(function (st) { return '<span class="tag ok" title="' + esc(st.sku) + '">' + esc((C.conditions[st.condition] || {}).label || st.condition) + ' ×' + esc(st.quantity) + '</span>'; }).join(' ') : '';
-				return '<div class="asm-part">' +
-					'<span class="ref">' + esc(p.ref || '') + '</span>' +
-					(p.image ? '<button type="button" class="thumb" data-diagram="' + esc(p.image) + '" data-dtitle="' + esc(p.part_number + ' – ' + p.name) + '"><img src="' + esc(p.image) + '" alt="" loading="lazy"></button>' : '<span class="thumb">' + icon('img') + '</span>') +
+				var pic = p.image
+					? '<button type="button" class="thumb" data-diagram="' + esc(p.image) + '" data-dtitle="' + esc(p.part_number + ' – ' + p.name) + '"><img src="' + esc(p.image) + '" alt="" loading="lazy"></button>'
+					: '<span class="thumb">' + icon('img') + '</span>';
+				var picBtn = C.canUpload ? '<button type="button" class="link-btn" data-lib-pic="part" data-lib-key="' + esc(p.part_number) + '">' + esc(p.image ? T.replacePic : T.addPic) + '</button>' : '';
+				return '<div class="asm-part' + (p.image ? '' : ' no-pic') + '">' +
+					'<span class="ref">' + esc(p.ref || '') + '</span>' + pic +
 					'<span style="min-width:0"><span class="pn">' + esc(p.part_number) + '</span><span class="pname">' + esc(p.name) + '</span>' +
-					'<span class="pmeta">' + esc(p.aliases) + '</span>' + (have ? '<span class="meta">' + have + '</span>' : '') + '</span>' +
+					'<span class="pmeta">' + esc(p.aliases) + '</span>' + (have ? '<span class="meta">' + have + '</span>' : '') + picBtn + '</span>' +
 					'<span class="asm-price">' + esc(usd(p.price)) + '</span>' +
 					'<button type="button" class="btn mini" data-add-from="' + esc(p.part_number) + '" data-add-name="' + esc(p.name) + '" data-add-cat="' + esc(p.category_id) + '">' + esc(T.addThis) + '</button></div>';
 			}).join('') + '</div>';
 			asmView.innerHTML = h;
 		}).catch(function (e) { asmView.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>'; });
 	}
-	if (M && asmList) {
+	function uploadLibPic(type, key, file, attachmentId) {
+		var fd = new FormData();
+		fd.append('type', type);
+		fd.append('key', key);
+		var p = file ? shrink(file).then(function (f) { fd.append('file', f, f.name); }) : Promise.resolve(fd.append('attachment_id', attachmentId));
+		return p.then(function () { return api('library/image', { method: 'POST', body: fd }); }).then(function (r) {
+			toast(T.picSaved);
+			return r;
+		});
+	}
+	if (M && tiles) {
 		loaders.cat = loadCatalog;
-		$('[data-cat-tops]').addEventListener('click', function (e) {
-			var b = e.target.closest('[data-top]');
+		tiles.addEventListener('click', function (e) {
+			var b = e.target.closest('[data-top-open],[data-sec-open],[data-asm-open]');
 			if (!b) { return; }
-			cat.top = b.getAttribute('data-top');
-			cat.filter = '';
-			$('[data-cat-filter]').value = '';
-			renderCatTops();
-			renderAsmList();
+			if (b.hasAttribute('data-top-open')) { cat.top = b.getAttribute('data-top-open'); cat.sec = null; var t = findTop(cat.top); if (t && t.sections.length === 1) { cat.sec = 0; } renderCat(); return; }
+			if (b.hasAttribute('data-sec-open')) { cat.sec = Number(b.getAttribute('data-sec-open')); renderCat(); return; }
+			openAssembly(b.getAttribute('data-asm-open'));
 		});
-		$('[data-cat-filter]').addEventListener('input', debounce(function (e) { cat.filter = e.target.value.trim(); renderAsmList(); }, 200));
-		asmList.addEventListener('click', function (e) {
-			var b = e.target.closest('[data-asm-open]');
-			if (b) { openAssembly(b.getAttribute('data-asm-open')); }
+		crumbs.addEventListener('click', function (e) {
+			var b = e.target.closest('[data-crumb]');
+			if (!b) { return; }
+			var c = b.getAttribute('data-crumb');
+			cat.filter = ''; $('[data-cat-filter]').value = '';
+			if (c === 'root') { cat.top = null; cat.sec = null; }
+			if (c === 'top') { cat.sec = null; var t = findTop(cat.top); if (t && t.sections.length === 1) { cat.sec = 0; } }
+			renderCat();
 		});
+		$('[data-cat-filter]').addEventListener('input', debounce(function (e) { cat.filter = e.target.value.trim(); renderCat(); }, 200));
 		asmView.addEventListener('click', function (e) {
-			if (e.target.closest('[data-asm-back]')) { renderAsmList(); return; }
+			var th = e.target.closest('[data-thumb-term]');
+			if (th && asmView._asm) {
+				api('library/thumb', { method: 'POST', body: { term_id: th.getAttribute('data-thumb-term'), code: asmView._asm.code } }).then(function () {
+					toast(T.thumbSet); loadCatalog().then(function () { openAssembly(asmView._asm.code); });
+				}).catch(function (er) { toast(er.message, true); });
+				return;
+			}
+			var pic = e.target.closest('[data-lib-pic]');
+			if (pic) {
+				libFile._target = { type: pic.getAttribute('data-lib-pic'), key: pic.getAttribute('data-lib-key'), code: asmView._asm && asmView._asm.code };
+				libFile.click();
+				return;
+			}
 			var add = e.target.closest('[data-add-from]');
 			if (add) {
 				resetForm();
@@ -1256,6 +1334,82 @@
 				checkDup();
 				identify();
 			}
+		});
+		libFile.addEventListener('change', function () {
+			var f = libFile.files[0], tg = libFile._target;
+			libFile.value = '';
+			if (!f || !tg) { return; }
+			uploadLibPic(tg.type, tg.key, f).then(function () {
+				if (tg.code) { openAssembly(tg.code); }
+				if (tg.type === 'diagram') { loadCatalog(); }
+			}).catch(function (er) { toast(er.message, true); });
+		});
+	}
+	// "Use my photo as catalog picture" on part cards.
+	root.addEventListener('click', function (e) {
+		var b = e.target.closest('[data-photo-to-lib]');
+		if (!b) { return; }
+		uploadLibPic('part', b.getAttribute('data-pn'), null, b.getAttribute('data-photo-to-lib')).then(function () { b.remove(); }).catch(function (er) { toast(er.message, true); });
+	});
+
+	/* Tools: download catalog images, clean up boxes. */
+	var imgTool = $('[data-img-tool]');
+	if (imgTool) {
+		var imgRun = false;
+		var showImg = function (st) {
+			var pct = st.total ? Math.round(100 * st.local / st.total) : 0;
+			$('[data-img-bar]').style.width = pct + '%';
+			$('[data-img-status]').textContent = st.remaining ? T.imgStatus.replace('%1$d', st.local).replace('%2$d', st.total).replace('%3$d', st.failed) : T.imgDone + ' (' + st.local + '/' + st.total + ')';
+			$('[data-action="img-retry"]').hidden = !st.failed || imgRun;
+		};
+		var stepImg = function (retry) {
+			if (!imgRun) { return; }
+			api('library/images/fetch', { method: 'POST', body: retry ? { retry: 1 } : {} }).then(function (r) {
+				showImg(r.status);
+				if (r.network) { toast((r.errors && r.errors[0]) || T.error, true); stopImg(); return; }
+				if (r.status.remaining > 0 && imgRun && (r.fetched > 0 || (r.errors || []).length)) { stepImg(false); } else { stopImg(); }
+			}).catch(function (er) { toast(er.message, true); stopImg(); });
+		};
+		var stopImg = function () {
+			imgRun = false;
+			$('[data-action="img-fetch"]').hidden = false;
+			$('[data-action="img-stop"]').hidden = true;
+		};
+		loaders.tools = function () { api('library/images').then(showImg).catch(function () {}); loadBoxStatus(); };
+		$('[data-action="img-fetch"]').addEventListener('click', function () {
+			imgRun = true; this.hidden = true; $('[data-action="img-stop"]').hidden = false; $('[data-action="img-retry"]').hidden = true; stepImg(false);
+		});
+		$('[data-action="img-stop"]').addEventListener('click', stopImg);
+		$('[data-action="img-retry"]').addEventListener('click', function () {
+			imgRun = true; this.hidden = true; $('[data-action="img-fetch"]').hidden = true; $('[data-action="img-stop"]').hidden = false; stepImg(true);
+		});
+	}
+	var boxTool = $('[data-box-tool]');
+	function loadBoxStatus() {
+		if (!boxTool) { return; }
+		api('boxes/cleanup').then(function (st) {
+			var d = Object.keys(st.duplicates || {});
+			var w = $('[data-box-dupes]');
+			w.hidden = !d.length;
+			w.textContent = d.length ? T.dupeBoxes + ' ' + d.map(function (k) { return k + ' ×' + st.duplicates[k]; }).join(', ') : '';
+		}).catch(function () {});
+	}
+	if (boxTool) {
+		boxTool.addEventListener('change', function (e) {
+			if (e.target.name === 'sps_box_mode') { $$('.box-mode label', boxTool).forEach(function (l) { l.classList.toggle('on', l.querySelector('input').checked); }); }
+		});
+		$('[data-action="box-cleanup"]').addEventListener('click', function () {
+			if (!window.confirm(T.confirmClean)) { return; }
+			var btn = this;
+			btn.disabled = true;
+			var rep = $('[data-box-report]');
+			rep.innerHTML = '<span class="spinner"></span> ' + esc(T.working);
+			var mode = (boxTool.querySelector('[name="sps_box_mode"]:checked') || {}).value || 'sections';
+			api('boxes/cleanup', { method: 'POST', body: { mode: mode, delete_empty: $('[data-box-opt="delete_empty"]', boxTool).checked, unbox: $('[data-box-opt="unbox"]', boxTool).checked } }).then(function (r) {
+				rep.textContent = T.cleanReport.replace('%1$d', r.boxes).replace('%2$d', r.merged).replace('%3$d', r.deleted).replace('%4$d', r.refiled).replace('%5$d', r.overrides).replace('%6$d', r.unboxed);
+				// Category list changed: reload the page data.
+				setTimeout(function () { window.location.reload(); }, 2500);
+			}).catch(function (er) { rep.textContent = er.message; toast(er.message, true); }).then(function () { btn.disabled = false; });
 		});
 	}
 
