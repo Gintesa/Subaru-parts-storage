@@ -100,6 +100,7 @@ class SPS_App {
 			),
 			'template'     => sps_setting( 'label_template' ),
 			'fitment'      => (string) sps_setting( 'default_fitment' ),
+			'removedFrom'  => (string) sps_setting( 'default_removed_from' ),
 			'fitments'     => $manager ? array_values( (array) get_terms( array( 'taxonomy' => SPS_TAX_FIT, 'hide_empty' => false, 'fields' => 'names' ) ) ) : array(),
 			'currency'     => (string) sps_setting( 'currency' ),
 			'unit'         => (string) sps_setting( 'distance_unit' ),
@@ -189,12 +190,14 @@ class SPS_App {
 			</div>
 			<div class="scan-controls">
 				<button type="button" class="btn" data-action="scan-start"><?php echo self::icon( 'camera' ); // phpcs:ignore WordPress.Security.EscapeOutput ?> <?php esc_html_e( 'Start camera', 'subaru-parts-inventory' ); ?></button>
+				<button type="button" class="btn ghost" data-action="putaway-start"><?php echo self::icon( 'box' ); // phpcs:ignore WordPress.Security.EscapeOutput ?> <?php esc_html_e( 'Put away into box', 'subaru-parts-inventory' ); ?></button>
 				<form class="scan-manual" data-scan-form>
 					<input type="text" name="code" placeholder="<?php esc_attr_e( 'Type or scan: label ID, part number, BOX code', 'subaru-parts-inventory' ); ?>" autocomplete="off" spellcheck="false" inputmode="text">
 					<button type="submit" class="btn ghost"><?php esc_html_e( 'Find', 'subaru-parts-inventory' ); ?></button>
 				</form>
 			</div>
-			<p class="hint"><?php esc_html_e( 'Point the camera at a part or box label QR code. USB / Bluetooth barcode scanners type straight into the field.', 'subaru-parts-inventory' ); ?></p>
+			<div class="putaway" data-putaway hidden></div>
+			<p class="hint"><?php esc_html_e( 'Point the camera at a part or box label QR code. USB / Bluetooth barcode scanners type straight into the field. "Put away": scan a box label, then each part you drop in – the part is marked as boxed.', 'subaru-parts-inventory' ); ?></p>
 			<div class="scan-result" data-scan-result></div>
 		</div>
 		<?php
@@ -214,6 +217,7 @@ class SPS_App {
 						<input type="text" id="sps-f-pn" name="part_number" class="mono" placeholder="14411AA850" autocomplete="off" spellcheck="false">
 						<button type="button" class="icon-btn" data-action="scan-into-pn" title="<?php esc_attr_e( 'Scan barcode on the box', 'subaru-parts-inventory' ); ?>"><?php echo self::icon( 'scan' ); // phpcs:ignore WordPress.Security.EscapeOutput ?></button>
 					</div>
+					<div class="ident" data-ident hidden></div>
 					<div class="warn" data-dup hidden></div>
 				</div>
 				<div>
@@ -229,6 +233,7 @@ class SPS_App {
 
 			<label class="field gap"><?php esc_html_e( 'Condition', 'subaru-parts-inventory' ); ?></label>
 			<div class="svc-pick cond-pick" data-cond-pick></div>
+			<div class="hint cond-desc" data-cond-desc></div>
 			<div class="used-only">
 				<label class="field gap"><?php esc_html_e( 'Checklist', 'subaru-parts-inventory' ); ?></label>
 				<div class="svc-pick" data-flag-pick></div>
@@ -310,7 +315,8 @@ class SPS_App {
 			<button type="button" class="chip on" data-cond=""><?php esc_html_e( 'All', 'subaru-parts-inventory' ); ?></button>
 			<button type="button" class="chip" data-cond="new"><?php esc_html_e( 'New', 'subaru-parts-inventory' ); ?></button>
 			<button type="button" class="chip" data-cond="used"><?php esc_html_e( 'Used', 'subaru-parts-inventory' ); ?></button>
-			<button type="button" class="chip" data-cond="core"><?php esc_html_e( 'Core', 'subaru-parts-inventory' ); ?></button>
+			<button type="button" class="chip" data-cond="bad"><?php esc_html_e( 'Bad', 'subaru-parts-inventory' ); ?></button>
+			<button type="button" class="chip" data-cond="unusable"><?php esc_html_e( 'Unusable', 'subaru-parts-inventory' ); ?></button>
 		</div>
 		<div class="filters">
 			<select data-filter="category" aria-label="<?php esc_attr_e( 'Category', 'subaru-parts-inventory' ); ?>"></select>
@@ -454,6 +460,28 @@ class SPS_App {
 			'of'           => __( 'of', 'subaru-parts-inventory' ),
 			'newLbl'       => __( 'New', 'subaru-parts-inventory' ),
 			'checklist'    => __( 'Checklist', 'subaru-parts-inventory' ),
+			'notBoxed'     => __( 'Not boxed', 'subaru-parts-inventory' ),
+			'putAway'      => __( 'Put away', 'subaru-parts-inventory' ),
+			'markBoxed'    => __( 'Mark boxed in', 'subaru-parts-inventory' ),
+			'paStep1'      => __( 'Step 1 – scan the BOX label (or type its code, e.g. BOX-EA).', 'subaru-parts-inventory' ),
+			'paStep2'      => __( 'Now scan each part you put into', 'subaru-parts-inventory' ),
+			'paDone'       => __( 'put away', 'subaru-parts-inventory' ),
+			'paFinish'     => __( 'Finish', 'subaru-parts-inventory' ),
+			'paChangeBox'  => __( 'Change box', 'subaru-parts-inventory' ),
+			'paWrong'      => __( 'Wrong box!', 'subaru-parts-inventory' ),
+			'paForce'      => __( 'Store it here anyway', 'subaru-parts-inventory' ),
+			'paSkip'       => __( 'Skip', 'subaru-parts-inventory' ),
+			'paBoxed'      => __( 'Boxed in', 'subaru-parts-inventory' ),
+			'paNoBox'      => __( 'Unknown box code', 'subaru-parts-inventory' ),
+			'paNeedBox'    => __( 'Scan a box label first.', 'subaru-parts-inventory' ),
+			'paMany'       => __( 'Several parts have this number – tap the one you are putting away:', 'subaru-parts-inventory' ),
+			'identFrom'    => array(
+				'library' => __( 'from your parts library', 'subaru-parts-inventory' ),
+				'mine'    => __( 'remembered from your parts', 'subaru-parts-inventory' ),
+				'similar' => __( 'from a similar part number', 'subaru-parts-inventory' ),
+				'rule'    => __( 'guessed from the number group – check it', 'subaru-parts-inventory' ),
+			),
+			'goesIn'       => __( 'goes in', 'subaru-parts-inventory' ),
 			'usedLbl'      => __( 'Used', 'subaru-parts-inventory' ),
 		);
 	}

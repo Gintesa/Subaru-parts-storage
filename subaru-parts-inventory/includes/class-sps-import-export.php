@@ -107,6 +107,7 @@ class SPS_Import_Export {
 					</form>
 				</div>
 			</div>
+			<?php SPS_Catalog::panel(); ?>
 		</div>
 		<?php
 	}
@@ -192,7 +193,7 @@ class SPS_Import_Export {
 		$out = fopen( 'php://output', 'w' );
 		fwrite( $out, "\xEF\xBB\xBF" );
 		fputcsv( $out, self::columns() );
-		fputcsv( $out, array( '', '14411AA850', 'Turbocharger assembly', 'Complete with gaskets', 'Engine Auxiliaries > Turbocharger', sps_setting( 'default_fitment' ), '', '', 'used_b', 'tested_ok|scratches', 'No shaft play, light scratches on compressor housing', '62000', '2017 WRX donor', '1', 'in_stock', '', 'bag 1', '350', '2026-05-01', 'Local breaker', '450', '', '8.5', '1', '', '', 'publish' ) );
+		fputcsv( $out, array( '', '14411AA850', 'Turbocharger assembly', 'Complete with gaskets', 'Engine Auxiliaries > Turbocharger', sps_setting( 'default_fitment' ), '', '', 'used', 'tested_ok|scratches', 'No shaft play, light scratches on compressor housing', '62000', '2017 WRX donor', '1', 'not_boxed', '', 'bag 1', '350', '2026-05-01', 'Local breaker', '450', '', '8.5', '1', '', '', 'publish' ) );
 		fputcsv( $out, array( '', '26296VA120', 'Front brake pad kit', '', 'Suspension, Axle & Brake > Front Brake', sps_setting( 'default_fitment' ), '', '', 'new', '', '', '', '', '2', 'in_stock', '', '', '75', '', 'Dealer', '75', '', '', '1', '', '', 'publish' ) );
 		fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions
 		exit;
@@ -285,6 +286,15 @@ class SPS_Import_Export {
 	public static function import_row( array $row, $publish = true ) {
 		$name = isset( $row['name'] ) ? sanitize_text_field( $row['name'] ) : '';
 		$pn   = isset( $row['part_number'] ) ? $row['part_number'] : '';
+		if ( '' !== $pn && ( '' === $name || empty( $row['category'] ) ) ) {
+			$ident = SPS_Catalog::identify( $pn );
+			if ( '' === $name ) {
+				$name = $ident['name'];
+			}
+			if ( empty( $row['category'] ) && '' !== $ident['category_path'] && $ident['category_id'] ) {
+				$row['category'] = $ident['category_path'];
+			}
+		}
 		if ( '' === $name && '' === $pn ) {
 			return new WP_Error( 'sps_missing', __( 'needs a part_number or name.', 'subaru-parts-inventory' ) );
 		}
@@ -328,7 +338,7 @@ class SPS_Import_Export {
 			}
 		}
 		if ( isset( $meta['condition'] ) ) {
-			$meta['condition'] = self::match_key( $meta['condition'], sps_conditions() );
+			$meta['condition'] = sps_condition_key( self::match_key( $meta['condition'], sps_conditions() ) );
 		}
 		if ( isset( $meta['status'] ) ) {
 			$meta['status'] = self::match_key( $meta['status'], sps_statuses() );

@@ -9,7 +9,7 @@ The plugin is in [`subaru-parts-inventory/`](subaru-parts-inventory/).
 | Area | What you get |
 |---|---|
 | **Categories = boxes** | The Subaru catalog groups for the 2017 WRX 2.0L 6MT come preloaded: Engine Main, Engine Auxiliaries, Manual Transmission, Differential & Propeller Shaft, Suspension Axle & Brake, Body Electrical, Body, Interior & Seats, Heater & A/C, Accessories, Maintenance, plus a "To Sort" box. That is 12 groups and about 145 sub-categories. Each category has a **storage box code** (e.g. `BOX-EA`) and a location. Sub-categories use their parent's box until you give them their own, so you can split a crowded box later. |
-| **Condition** | Grades: `NEW`, `NEW-OB`, `USED-A/B/C/D`, `CORE`. There is a 16-item checklist (tested, cracks, corrosion, broken tabs, leaking…), public condition notes, mileage on the part, and the donor vehicle/VIN (kept private). |
+| **Condition** | Four plain grades: **New**, **Used**, **Bad** (needs repair or cleaning), **Unusable** (for parts or scrap only). Older grades are converted automatically on update. There is a checklist (tested, dirty, cracks, corrosion, broken tabs, leaking…), public condition notes, mileage on the part, and the donor vehicle/VIN (kept private). "Removed from" defaults to your VIN, which you can change in Settings. |
 | **Condition log** | A dated history of inspection notes with the grade at that time. Grade changes are logged automatically. |
 | **Labels** | Every part gets a permanent **label ID** (`SP-00042`). A label shows the **OEM part number** (large), the part name, the condition grade, the label ID and the box code. It also has a **QR code** (scan to open the part) and, on labels at least 34 mm tall, a **Code 128 barcode** of the part number. Formats: Brother QL (DK-11209/11201/11202), DYMO (11352, 99012), thermal 2.25×1.25"/4×2"/4×6", Avery L7160/L7163/L7165 (A4), Avery 5160/5163 (Letter), and A6/A4 box labels. On sheets you can skip labels that are already used. Labels are marked as printed after you print them, and the dashboard reminds you which parts still need one. |
 | **Box labels** | A large label per box with the box code, the catalog group, a list of the sub-categories inside, and a QR code that lists everything in the box. |
@@ -20,6 +20,20 @@ The plugin is in [`subaru-parts-inventory/`](subaru-parts-inventory/).
 | **Import / export** | CSV export, which round-trips every field. CSV import creates parts or updates them (matched by label ID), creates missing categories from paths like `Engine Auxiliaries > Turbocharger`, and accepts `;` or `,` separators. A template CSV is included. |
 | **REST API** | `GET /wp-json/subaru-parts/v1/parts?search=&category=&condition=used`, `/parts/<id>`, `/categories`. Logged-in managers also get `/lookup?code=` and `POST /parts/<id>/quick`. |
 | **Roles** | Admins get full access. A "Parts Manager" role is added for a helper who should only manage parts. |
+
+## Part-number library (auto names & boxes)
+
+When you type or scan a part number, the name and category/box fill in automatically:
+
+1. **Your library:** import a CSV under *Subaru Parts → Import / Export → Part name library*. Columns are `part_number`, `name` and optionally `category`. Commas, semicolons and tabs all work, and a header row is optional.
+2. **Remembered names:** every name you give a part is saved. The next time that number, or another number with the same 5-digit Subaru base (e.g. 22433AA750 → 22433AA790), is entered, it fills in automatically. Your own names always win over imported ones.
+3. **Built-in number groups:** Subaru numbers start with a 5-digit group (14411 = turbocharger, 22433 = ignition coil, 26296 = front brake pads…). Unknown numbers still get a suggested box from these groups. This is shown in amber as "guessed – check it".
+
+This also works for CSV imports and parts added with only a part number.
+
+## Boxing workflow
+
+New parts start as **Not boxed yet**. Add the parts and print their labels. Then open **Scanner → Put away into box**, scan the box label, and scan each part as you drop it in. Each scanned part becomes **In stock (boxed)**. If a part belongs in a different box you get a warning, plus a "Store it here anyway" button that records the override. Each not-boxed part's card also has a one-tap **Mark boxed in BOX-xx** button. The header shows how many parts are still not boxed.
 
 ## The parts page (front-end app)
 

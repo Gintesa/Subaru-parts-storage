@@ -201,7 +201,7 @@ class SPS_Labels {
 				sps_refresh_derived_meta( $id );
 				$sku = (string) sps_meta( $id, 'sku' );
 			}
-			$cond    = sps_meta( $id, 'condition', 'used_b' );
+			$cond    = sps_meta( $id, 'condition', 'used' );
 			$cat     = sps_part_category( $id );
 			$fit     = wp_get_post_terms( $id, SPS_TAX_FIT, array( 'fields' => 'names' ) );
 			$label   = array(

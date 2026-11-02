@@ -44,6 +44,7 @@ class SPS_Settings {
 			'sku_prefix'          => isset( $in['sku_prefix'] ) ? preg_replace( '/[^A-Za-z0-9\-_.]/', '', $in['sku_prefix'] ) : $def['sku_prefix'],
 			'sku_digits'          => isset( $in['sku_digits'] ) ? max( 3, min( 10, (int) $in['sku_digits'] ) ) : $def['sku_digits'],
 			'default_fitment'     => isset( $in['default_fitment'] ) ? sanitize_text_field( $in['default_fitment'] ) : '',
+			'default_removed_from' => isset( $in['default_removed_from'] ) ? strtoupper( sanitize_text_field( $in['default_removed_from'] ) ) : '',
 			'distance_unit'       => isset( $in['distance_unit'] ) && 'mi' === $in['distance_unit'] ? 'mi' : 'km',
 			'currency'            => isset( $in['currency'] ) ? sanitize_text_field( $in['currency'] ) : $def['currency'],
 			'label_template'      => isset( $in['label_template'] ) && array_key_exists( $in['label_template'], SPS_Labels::templates() ) ? $in['label_template'] : $def['label_template'],
@@ -94,6 +95,9 @@ class SPS_Settings {
 				<table class="form-table" role="presentation">
 					<tr><th scope="row"><label for="default_fitment"><?php esc_html_e( 'Default vehicle for new parts', 'subaru-parts-inventory' ); ?></label></th>
 						<td><input id="default_fitment" class="regular-text" name="<?php echo esc_attr( $n ); ?>[default_fitment]" value="<?php echo esc_attr( $s['default_fitment'] ); ?>" /></td></tr>
+					<tr><th scope="row"><label for="default_removed_from"><?php esc_html_e( 'Default "Removed from" (your VIN)', 'subaru-parts-inventory' ); ?></label></th>
+						<td><input id="default_removed_from" class="regular-text code" name="<?php echo esc_attr( $n ); ?>[default_removed_from]" value="<?php echo esc_attr( $s['default_removed_from'] ); ?>" />
+						<p class="description"><?php esc_html_e( 'Pre-filled on every new used / bad / unusable part. Change it per part for parts from a donor car.', 'subaru-parts-inventory' ); ?></p></td></tr>
 					<tr><th scope="row"><?php esc_html_e( 'Units', 'subaru-parts-inventory' ); ?></th>
 						<td><select name="<?php echo esc_attr( $n ); ?>[distance_unit]"><option value="km" <?php selected( $s['distance_unit'], 'km' ); ?>>km</option><option value="mi" <?php selected( $s['distance_unit'], 'mi' ); ?>>miles</option></select>
 						<label><?php esc_html_e( 'Currency', 'subaru-parts-inventory' ); ?> <input class="small-text" name="<?php echo esc_attr( $n ); ?>[currency]" value="<?php echo esc_attr( $s['currency'] ); ?>" /></label></td></tr>

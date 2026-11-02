@@ -112,6 +112,9 @@ class SPS_Admin {
 	private static function field( $post_id, $key, $label, $args = array() ) {
 		$args  = wp_parse_args( $args, array( 'type' => 'text', 'placeholder' => '', 'help' => '', 'class' => '', 'attrs' => '' ) );
 		$value = sps_meta( $post_id, $key );
+		if ( 'removed_from' === $key && '' === $value && 'auto-draft' === get_post_status( $post_id ) ) {
+			$value = (string) sps_setting( 'default_removed_from' );
+		}
 		if ( 'part_number' === $key && '' === $value && isset( $_GET['sps_pn'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification -- prefill only.
 			$value = sps_sanitize_field( 'part_number', wp_unslash( $_GET['sps_pn'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
 		}
@@ -159,7 +162,7 @@ class SPS_Admin {
 	}
 
 	public static function box_condition( $post ) {
-		$current = sps_meta( $post->ID, 'condition', 'used_b' );
+		$current = sps_meta( $post->ID, 'condition', 'used' );
 		$flags   = (array) sps_meta( $post->ID, 'condition_flags', array() );
 		echo '<div class="sps-condition-picker" role="radiogroup">';
 		foreach ( sps_conditions() as $key => $c ) {
@@ -186,7 +189,7 @@ class SPS_Admin {
 		echo '<div class="sps-grid sps-used-only">';
 		/* translators: %s: km or mi */
 		self::field( $post->ID, 'mileage', sprintf( __( 'Mileage on part (%s)', 'subaru-parts-inventory' ), sps_setting( 'distance_unit' ) ), array( 'type' => 'number', 'attrs' => 'min="0" step="1"' ) );
-		self::field( $post->ID, 'removed_from', __( 'Removed from (donor vehicle / VIN)', 'subaru-parts-inventory' ), array( 'placeholder' => 'JF1VA1… / 2016 WRX donor', 'help' => __( 'Private.', 'subaru-parts-inventory' ) ) );
+		self::field( $post->ID, 'removed_from', __( 'Removed from (donor vehicle / VIN)', 'subaru-parts-inventory' ), array( 'placeholder' => 'JF1VA1… / 2016 WRX donor', 'help' => __( 'Private. New parts default to the VIN set in Settings.', 'subaru-parts-inventory' ) ) );
 		echo '</div>';
 	}
 
@@ -253,7 +256,7 @@ class SPS_Admin {
 	public static function box_stock( $post ) {
 		$cat      = sps_part_category( $post->ID );
 		$cat_id   = $cat ? $cat->term_id : 0;
-		$status   = sps_meta( $post->ID, 'status', 'in_stock' );
+		$status   = sps_meta( $post->ID, 'status', 'not_boxed' );
 		$qty      = sps_meta( $post->ID, 'quantity', 1 );
 		$public   = 'auto-draft' === $post->post_status ? (int) sps_setting( 'public_default' ) : (int) sps_meta( $post->ID, 'public', 0 );
 		$box      = sps_part_box( $post->ID );
@@ -451,9 +454,6 @@ class SPS_Admin {
 		// phpcs:enable
 		echo '<select name="' . esc_attr( SPS_TAX_CAT ) . '"><option value="">' . esc_html__( 'All categories', 'subaru-parts-inventory' ) . '</option>' . sps_category_options( $cat, true, 'slug' ) . '</select>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '<select name="sps_condition"><option value="">' . esc_html__( 'Any condition', 'subaru-parts-inventory' ) . '</option>';
-		foreach ( array( 'g:new' => __( 'All new', 'subaru-parts-inventory' ), 'g:used' => __( 'All used', 'subaru-parts-inventory' ) ) as $k => $l ) {
-			echo '<option value="' . esc_attr( $k ) . '" ' . selected( $condition, sanitize_key( $k ), false ) . '>' . esc_html( $l ) . '</option>';
-		}
 		foreach ( sps_conditions() as $k => $c ) {
 			echo '<option value="' . esc_attr( $k ) . '" ' . selected( $condition, $k, false ) . '>' . esc_html( $c['label'] ) . '</option>';
 		}
@@ -650,7 +650,7 @@ class SPS_Admin {
 			'items'        => 0,
 			'value'        => 0.0,
 			'cost'         => 0.0,
-			'by_group'     => array( 'new' => 0, 'used' => 0, 'core' => 0 ),
+			'by_group'     => array_fill_keys( array_keys( sps_conditions() ), 0 ),
 			'by_condition' => array_fill_keys( array_keys( $conditions ), 0 ),
 			'by_status'    => array_fill_keys( array_keys( $statuses ), 0 ),
 			'by_category'  => array(),
@@ -667,7 +667,7 @@ class SPS_Admin {
 				continue;
 			}
 			$qty  = (int) sps_meta( $id, 'quantity', 0 );
-			$cond = sps_meta( $id, 'condition', 'used_b' );
+			$cond = sps_meta( $id, 'condition', 'used' );
 			$stats['parts']++;
 			$stats['items'] += $qty;
 			$stats['value'] += (float) sps_meta( $id, 'value', 0 ) * $qty;
@@ -717,12 +717,12 @@ class SPS_Admin {
 				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['parts'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Parts in stock', 'subaru-parts-inventory' ); ?></span></div>
 				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['items'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Total pieces', 'subaru-parts-inventory' ); ?></span></div>
 				<div class="sps-card sps-card--new"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['by_group']['new'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'New', 'subaru-parts-inventory' ); ?></span></div>
-				<div class="sps-card sps-card--used"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['by_group']['used'] + $s['by_group']['core'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Used / core', 'subaru-parts-inventory' ); ?></span></div>
+				<div class="sps-card sps-card--used"><span class="sps-card__num"><?php echo esc_html( number_format_i18n( $s['parts'] - $s['by_group']['new'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Used / bad / unusable', 'subaru-parts-inventory' ); ?></span></div>
 				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( sps_money( $s['value'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Estimated value', 'subaru-parts-inventory' ); ?></span></div>
 				<div class="sps-card"><span class="sps-card__num"><?php echo esc_html( sps_money( $s['cost'] ) ); ?></span><span class="sps-card__label"><?php esc_html_e( 'Purchase cost', 'subaru-parts-inventory' ); ?></span></div>
 			</div>
 
-			<?php if ( $s['unlabelled'] || $s['no_category'] || $s['no_photo'] ) : ?>
+			<?php if ( $s['unlabelled'] || $s['no_category'] || $s['no_photo'] || ! empty( $s['by_status']['not_boxed'] ) ) : ?>
 			<div class="sps-todo">
 				<h2><?php esc_html_e( 'To do', 'subaru-parts-inventory' ); ?></h2>
 				<ul>
@@ -730,6 +730,10 @@ class SPS_Admin {
 						<li>🏷️ <?php /* translators: %d: count */ echo esc_html( sprintf( _n( '%d part has no printed label.', '%d parts have no printed label.', $s['unlabelled'], 'subaru-parts-inventory' ), $s['unlabelled'] ) ); ?>
 							<a class="button button-primary button-small" target="_blank" href="<?php echo esc_url( SPS_Labels::print_url( 'unlabelled' ) ); ?>"><?php esc_html_e( 'Print all missing labels', 'subaru-parts-inventory' ); ?></a>
 							<a href="<?php echo esc_url( $base . '&sps_label=no' ); ?>"><?php esc_html_e( 'Show them', 'subaru-parts-inventory' ); ?></a></li>
+					<?php endif; ?>
+					<?php if ( ! empty( $s['by_status']['not_boxed'] ) ) : ?>
+						<li>📥 <?php /* translators: %d: count */ echo esc_html( sprintf( _n( '%d part is not in a box yet.', '%d parts are not in a box yet.', $s['by_status']['not_boxed'], 'subaru-parts-inventory' ), $s['by_status']['not_boxed'] ) ); ?>
+							<a href="<?php echo esc_url( $base . '&sps_status=not_boxed' ); ?>"><?php esc_html_e( 'Show them', 'subaru-parts-inventory' ); ?></a></li>
 					<?php endif; ?>
 					<?php if ( $s['no_category'] ) : ?>
 						<li>📦 <?php /* translators: %d: count */ echo esc_html( sprintf( _n( '%d part has no category (box).', '%d parts have no category (box).', $s['no_category'], 'subaru-parts-inventory' ), $s['no_category'] ) ); ?></li>

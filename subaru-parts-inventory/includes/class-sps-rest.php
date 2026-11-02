@@ -110,6 +110,8 @@ class SPS_REST {
 					'status'    => array( 'type' => 'string', 'enum' => array_keys( sps_statuses() ) ),
 					'condition' => array( 'type' => 'string', 'enum' => array_keys( sps_conditions() ) ),
 					'note'      => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_textarea_field' ),
+					'put_away'  => array( 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
+					'force'     => array( 'type' => 'boolean', 'default' => false ),
 				),
 			)
 		);
@@ -172,6 +174,18 @@ class SPS_REST {
 		);
 		register_rest_route(
 			self::NS,
+			'/identify',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => static function ( WP_REST_Request $request ) {
+					return rest_ensure_response( SPS_Catalog::identify( (string) $request['number'] ) );
+				},
+				'permission_callback' => array( __CLASS__, 'can_manage' ),
+				'args'                => array( 'number' => array( 'type' => 'string', 'required' => true, 'sanitize_callback' => 'sanitize_text_field' ) ),
+			)
+		);
+		register_rest_route(
+			self::NS,
 			'/stats',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -228,6 +242,16 @@ class SPS_REST {
 		if ( ! $id && '' === $name && '' === $pn ) {
 			return new WP_Error( 'sps_missing', __( 'Enter a part number or a name.', 'subaru-parts-inventory' ), array( 'status' => 400 ) );
 		}
+		$ident = null;
+		if ( ! $id && '' !== $pn && ( '' === $name || empty( $params['category_id'] ) ) ) {
+			$ident = SPS_Catalog::identify( $pn );
+			if ( '' === $name && '' !== $ident['name'] ) {
+				$name = $ident['name'];
+			}
+			if ( empty( $params['category_id'] ) && $ident['category_id'] ) {
+				$params['category_id'] = $ident['category_id'];
+			}
+		}
 		$postarr = array( 'post_type' => SPS_PT );
 		if ( '' !== $name || ! $id ) {
 			$postarr['post_title'] = '' !== $name ? $name : $pn;
@@ -251,6 +275,9 @@ class SPS_REST {
 
 		$before = sps_meta( $id, 'condition' );
 		$meta   = array_intersect_key( $params, sps_meta_fields() );
+		if ( $created && ! isset( $meta['status'] ) ) {
+			$meta['status'] = 'not_boxed';
+		}
 		if ( array_key_exists( 'condition_flags', $params ) && ! is_array( $params['condition_flags'] ) && '' === (string) $params['condition_flags'] ) {
 			$meta['condition_flags'] = array();
 		}
@@ -286,6 +313,34 @@ class SPS_REST {
 		$data['created']   = $created;
 		$data['print_url'] = SPS_Labels::print_url( array( $id ) );
 		return rest_ensure_response( $data );
+	}
+
+	/**
+	 * Mark a part as boxed in the given box. If the box differs from the part's
+	 * category box, refuse (409) unless $force, which stores it there as an override.
+	 */
+	private static function put_away( $id, $code, $force ) {
+		$box      = sps_part_box( $id );
+		$cat_box  = sps_term_box( sps_part_category( $id ) );
+		$expected = strtoupper( (string) $box['code'] );
+		if ( '' !== $expected && $expected !== $code && ! $force ) {
+			return new WP_Error(
+				'sps_wrong_box',
+				/* translators: 1: expected box, 2: scanned box */
+				sprintf( __( 'This part belongs in %1$s, not %2$s.', 'subaru-parts-inventory' ), $expected, $code ),
+				array( 'status' => 409, 'expected' => $expected, 'scanned' => $code, 'part' => sps_part_data( $id, 'admin' ) )
+			);
+		}
+		$data = array( 'status' => 'in_stock' );
+		if ( strtoupper( (string) $cat_box['code'] ) === $code ) {
+			$data['box_override'] = '';
+		} elseif ( $expected !== $code ) {
+			$data['box_override'] = $code;
+		}
+		sps_save_part_meta( $id, $data );
+		/* translators: %s: box code */
+		sps_add_inspection( $id, sprintf( __( 'Put away in %s.', 'subaru-parts-inventory' ), $code ) );
+		return rest_ensure_response( sps_part_data( $id, 'admin' ) );
 	}
 
 	public static function trash_part( WP_REST_Request $request ) {
@@ -379,8 +434,10 @@ class SPS_REST {
 					'manager'    => true,
 					'parts'      => $s['parts'],
 					'items'      => $s['items'],
-					'new'        => $s['by_group']['new'],
-					'used'       => $s['by_group']['used'] + $s['by_group']['core'],
+					'new'        => $s['by_condition']['new'],
+					'used'       => $s['parts'] - $s['by_condition']['new'],
+					'by_condition' => $s['by_condition'],
+					'not_boxed'  => $s['by_status']['not_boxed'],
 					'value'      => $s['value'],
 					'value_fmt'  => sps_money( $s['value'] ),
 					'cost_fmt'   => sps_money( $s['cost'] ),
@@ -566,10 +623,8 @@ class SPS_REST {
 		if ( '' !== $args['condition'] ) {
 			$wanted = array();
 			foreach ( array_map( 'trim', explode( ',', $args['condition'] ) ) as $c ) {
-				if ( in_array( $c, array( 'new', 'used', 'core' ), true ) ) {
-					$wanted = array_merge( $wanted, array_keys( wp_list_filter( sps_conditions(), array( 'group' => $c ) ) ) );
-				} elseif ( array_key_exists( $c, sps_conditions() ) ) {
-					$wanted[] = $c;
+				if ( '' !== $c ) {
+					$wanted[] = sps_condition_key( $c, $c );
 				}
 			}
 			if ( $wanted ) {
@@ -728,6 +783,9 @@ class SPS_REST {
 		$id = (int) $request['id'];
 		if ( SPS_PT !== get_post_type( $id ) ) {
 			return new WP_Error( 'sps_not_found', __( 'Part not found.', 'subaru-parts-inventory' ), array( 'status' => 404 ) );
+		}
+		if ( $request['put_away'] ) {
+			return self::put_away( $id, strtoupper( trim( preg_replace( '/^BOX:/i', '', (string) $request['put_away'] ) ) ), (bool) $request['force'] );
 		}
 		$data = array();
 		if ( null !== $request['quantity'] ) {

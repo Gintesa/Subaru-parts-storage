@@ -91,8 +91,7 @@
 	function condBadge(key) {
 		var c = C.conditions[key];
 		if (!c) { return ''; }
-		var cls = c.group === 'new' && key === 'new' ? 'new' : key;
-		return '<span class="cond cond-' + esc(cls) + '" title="' + esc(c.label) + '">' + esc(c.short) + '</span>';
+		return '<span class="cond cond-' + esc(key) + '" title="' + esc(c.desc) + '">' + esc(c.label) + '</span>';
 	}
 	function statusLabel(key) { return C.statuses[key] ? C.statuses[key].label : key; }
 
@@ -161,9 +160,9 @@
 			var html;
 			if (s.manager) {
 				html = stat(T.parts, esc(s.parts), esc(s.items) + ' ' + esc(T.pieces.toLowerCase()), 'inv') +
+					stat(T.notBoxed, esc(s.not_boxed || 0), esc(s.unlabelled) + ' ' + esc(T.unlabelled.toLowerCase()), 'labels', (s.not_boxed || s.unlabelled) ? 'warn' : 'ok') +
 					stat(T.newUsed, esc(s['new']) + '<small>/</small>' + esc(s.used), '', 'inv') +
-					stat(T.value, esc(s.value_fmt || '—'), esc(T.cost) + ' ' + esc(s.cost_fmt || '—'), 'tools') +
-					stat(T.unlabelled, esc(s.unlabelled), s.no_photo ? esc(s.no_photo) + ' ' + esc(T.noPhoto) : '', 'labels', s.unlabelled ? 'warn' : 'ok');
+					stat(T.value, esc(s.value_fmt || '—'), esc(T.cost) + ' ' + esc(s.cost_fmt || '—'), 'tools');
 			} else {
 				html = stat(T.parts, esc(s.parts), '', 'inv') + stat(T.newLbl, esc(s['new']), '', 'inv') + stat(T.usedLbl, esc(s.used), '', 'inv') +
 					stat(T.boxes, String(boxes ? boxes.length : '—'), '', 'boxes');
@@ -310,7 +309,7 @@
 		if (d.sku) { h += '<span class="tag">' + esc(d.sku) + '</span>'; }
 		if (d.box && d.box.code) { h += '<span class="tag neon">▣ ' + esc(d.box.code) + (d.box.bin ? ' · ' + esc(d.box.bin) : '') + '</span>'; }
 		if (M) {
-			h += '<span class="tag ' + (d.status === 'in_stock' || d.status === 'listed' ? 'ok' : 'amber') + '">' + esc(statusLabel(d.status)) + '</span>';
+			h += '<span class="tag ' + (d.status === 'not_boxed' ? 'notboxed' : (d.status === 'in_stock' || d.status === 'listed' ? 'ok' : 'amber')) + '">' + esc(statusLabel(d.status)) + '</span>';
 			h += d.label_printed ? '<span class="tag ok">✔ ' + esc(T.labelPrinted) + '</span>' : '<span class="tag amber">' + esc(T.labelMissing) + '</span>';
 			if (d['public'] === 0) { h += '<span class="tag">' + esc(T.hidden) + '</span>'; }
 		}
@@ -338,7 +337,8 @@
 				'<select data-q="status" aria-label="' + esc(T.statusNow) + '">' + opts + '</select>' +
 				'<div class="note-row"><input type="text" data-q="note" placeholder="' + esc(T.notePh) + '"><button type="button" class="btn ghost mini" data-q="addnote">' + esc(T.addNote) + '</button></div></div>';
 			h += '<div class="card-actions">' +
-				'<button type="button" class="btn mini" data-q="edit">' + esc(T.edit) + '</button>' +
+				(d.status === 'not_boxed' && d.box && d.box.code ? '<button type="button" class="btn mini" data-q="boxed" data-box-code="' + esc(d.box.code) + '">✔ ' + esc(T.markBoxed) + ' ' + esc(d.box.code) + '</button>' : '') +
+				'<button type="button" class="btn ' + (d.status === 'not_boxed' ? 'ghost ' : '') + 'mini" data-q="edit">' + esc(T.edit) + '</button>' +
 				'<a class="btn ghost mini" href="' + esc(C.printUrl + '&ids=' + d.id) + '" target="_blank" rel="noopener">' + esc(T.printLabel) + '</a>' +
 				(d.edit_url ? '<a class="btn faint mini" href="' + esc(d.edit_url) + '">' + esc(T.editAdmin) + '</a>' : '') +
 				(d['public'] && C.statuses[d.status] && C.statuses[d.status]['public'] && d.post_status === 'publish' ? '<a class="btn faint mini" href="' + esc(d.url) + '">' + esc(T.publicPage) + '</a>' : '') +
@@ -374,6 +374,7 @@
 			return;
 		}
 		var body = {};
+		if (q === 'boxed') { body.put_away = b.getAttribute('data-box-code'); }
 		if (q === 'inc') { body.qty_delta = 1; }
 		if (q === 'dec') { body.qty_delta = -1; }
 		if (q === 'addnote') {
@@ -381,7 +382,7 @@
 			if (!inp.value.trim()) { inp.focus(); return; }
 			body.note = inp.value.trim();
 		}
-		quick(id, body, q === 'addnote' ? T.noteAdded : null);
+		quick(id, body, q === 'addnote' ? T.noteAdded : (q === 'boxed' ? T.paBoxed + ' ' + body.put_away : null));
 	});
 	root.addEventListener('change', function (e) {
 		var s = e.target.closest('select[data-q="status"]');
@@ -400,6 +401,7 @@
 			updateEverywhere(d);
 			toast(msg || (body.status ? T.statusNow + ': ' + statusLabel(d.status) : T.qtyNow + ': ' + d.quantity));
 			loadStats();
+			if (loaded.labels) { loadLabels(); }
 		}).catch(function (er) { toast(er.message, true); });
 	}
 
@@ -556,6 +558,7 @@
 		if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast(T.cameraNo, true); return; }
 		goTo('scan');
 		if (scan.mode === 'pn') { result.innerHTML = '<p class="hint">' + esc(T.scanPnHint) + '</p>'; }
+		scan.lastCode = ''; scan.lastAt = 0;
 		var prep = Promise.resolve();
 		if ('BarcodeDetector' in window) {
 			prep = window.BarcodeDetector.getSupportedFormats().then(function (formats) {
@@ -615,8 +618,19 @@
 	}
 
 	function found(text) {
-		view.classList.add('hit');
 		if (navigator.vibrate) { navigator.vibrate(60); }
+		if (scan.mode === 'putaway') {
+			// Keep the camera running; ignore the same code for a few seconds.
+			var now = Date.now();
+			if (text === scan.lastCode && now - scan.lastAt < 4000) { requestAnimationFrame(tick); return; }
+			scan.lastCode = text; scan.lastAt = now;
+			view.classList.add('hit');
+			setTimeout(function () { view.classList.remove('hit'); }, 600);
+			putAwayScan(text);
+			setTimeout(function () { if (scan.running) { requestAnimationFrame(tick); } }, 1200);
+			return;
+		}
+		view.classList.add('hit');
 		stopCamera();
 		if (scan.mode === 'pn') {
 			var code = extractCode(text);
@@ -673,7 +687,7 @@
 	if (result) {
 		result.addEventListener('click', function (e) {
 			var add = e.target.closest('[data-add-pn]');
-			if (add) { resetForm(); $('[name="part_number"]', form).value = add.getAttribute('data-add-pn').toUpperCase(); goTo('add'); checkDup(); return; }
+			if (add) { resetForm(); $('[name="part_number"]', form).value = add.getAttribute('data-add-pn').toUpperCase(); goTo('add'); checkDup(); identify(); return; }
 			var row = e.target.closest('[data-open]');
 			if (!row) { return; }
 			var id = row.getAttribute('data-open');
@@ -683,14 +697,112 @@
 			if (!det.hidden) { api('parts/' + id).then(function (d) { inv.items[id] = d; det.innerHTML = partCard(d); }); }
 		});
 	}
+	/* Put away: scan a box label, then every part dropped into it. */
+	var pa = { box: null, log: [] };
+	var paEl = $('[data-putaway]');
+	function renderPutAway() {
+		if (!paEl) { return; }
+		paEl.hidden = false;
+		var ok = pa.log.filter(function (l) { return l.ok; }).length;
+		var head = pa.box
+			? '<div class="pa-head"><span>' + esc(T.paStep2) + '</span><span class="pa-box">' + esc(pa.box.code) + '</span><span class="pa-n">' + ok + ' ' + esc(T.paDone) + '</span>' +
+				'<button type="button" class="btn faint mini" data-pa="change">' + esc(T.paChangeBox) + '</button><button type="button" class="btn mini" data-pa="finish">' + esc(T.paFinish) + '</button></div>' +
+				'<div class="pmeta">' + esc(pa.box.path) + (pa.box.location ? ' · ⌖ ' + esc(pa.box.location) : '') + '</div>'
+			: '<div class="pa-head"><span>' + esc(T.paStep1) + '</span><button type="button" class="btn faint mini" data-pa="finish">' + esc(T.cancel) + '</button></div>';
+		paEl.innerHTML = head + '<ul class="pa-log">' + pa.log.map(function (l, i) {
+			return '<li class="' + (l.ok ? 'ok' : 'err') + '"><span class="pn">' + esc(l.pn) + '</span> <span>' + esc(l.text) + '</span>' +
+				(l.force ? '<button type="button" class="btn danger mini" data-pa-force="' + i + '">' + esc(T.paForce) + '</button>' : '') + '</li>';
+		}).join('') + '</ul>';
+	}
+	function startPutAway() {
+		pa.box = null; pa.log = [];
+		result.innerHTML = '';
+		renderPutAway();
+		startCamera('putaway');
+	}
+	function finishPutAway() {
+		pa.box = null; pa.log = [];
+		if (paEl) { paEl.hidden = true; paEl.innerHTML = ''; }
+		stopCamera();
+		scan.mode = 'lookup';
+		loadInv(true); loadStats();
+		if (loaded.labels) { loadLabels(); }
+		if (loaded.boxes) { loadBoxes(); }
+	}
+	function findBox(code) {
+		var bc = code.replace(/^BOX:/i, '').trim().toUpperCase();
+		var p = boxes ? Promise.resolve(boxes) : loadBoxes().then(function () { return boxes; });
+		return p.then(function (list) {
+			return (list || []).filter(function (x) { return x.code.toUpperCase() === bc || x.slug === bc.toLowerCase(); })[0] || null;
+		});
+	}
+	function putAwayOne(d, force) {
+		return api('parts/' + d.id + '/quick', { method: 'POST', body: { put_away: pa.box.code, force: !!force } }).then(function (nd) {
+			updateEverywhere(nd);
+			pa.log.unshift({ ok: true, pn: nd.part_number || nd.sku, text: nd.name + ' → ' + pa.box.code });
+			renderPutAway();
+		}).catch(function (er) {
+			var exp = er.data && er.data.data && er.data.data.expected;
+			pa.log.unshift({ ok: false, pn: d.part_number || d.sku, text: T.paWrong + ' ' + er.message, force: exp ? d : null });
+			renderPutAway();
+			if (navigator.vibrate) { navigator.vibrate([80, 60, 80]); }
+		});
+	}
+	function putAwayScan(raw) {
+		var code = extractCode(raw);
+		if (!code) { return; }
+		var looksBox = /^BOX[:\-]/i.test(code);
+		if (!pa.box || looksBox) {
+			findBox(code).then(function (b) {
+				if (b) { pa.box = b; pa.log = []; renderPutAway(); toast(T.paStep2 + ' ' + b.code); return; }
+				if (!pa.box) { toast(looksBox ? T.paNoBox + ': ' + code : T.paNeedBox, true); return; }
+				putAwayPart(code);
+			});
+			return;
+		}
+		putAwayPart(code);
+	}
+	function putAwayPart(code) {
+		api('lookup', { params: { code: code } }).then(function (list) {
+			if (!list.length) { pa.log.unshift({ ok: false, pn: code, text: T.notFound + ' ' + code }); renderPutAway(); return; }
+			if (list.length === 1) { return putAwayOne(list[0]); }
+			result.innerHTML = '<p class="hint">' + esc(T.paMany) + '</p>' + list.map(function (d) {
+				return '<div class="card"><span class="pn">' + esc(d.part_number) + '</span> ' + esc(d.name) + ' ' + condBadge(d.condition) + ' <span class="tag">' + esc(d.sku) + '</span> ' +
+					'<button type="button" class="btn mini" data-pa-pick="' + d.id + '">' + esc(T.putAway) + '</button></div>';
+			}).join('');
+			pa.choices = list;
+		}).catch(function (e) { toast(e.message, true); });
+	}
+	if (paEl) {
+		paEl.addEventListener('click', function (e) {
+			var b = e.target.closest('[data-pa]');
+			if (b && b.getAttribute('data-pa') === 'finish') { finishPutAway(); return; }
+			if (b && b.getAttribute('data-pa') === 'change') { pa.box = null; renderPutAway(); if (!scan.running) { startCamera('putaway'); } return; }
+			var f = e.target.closest('[data-pa-force]');
+			if (f) {
+				var entry = pa.log[Number(f.getAttribute('data-pa-force'))];
+				pa.log.splice(Number(f.getAttribute('data-pa-force')), 1);
+				putAwayOne(entry.force, true);
+			}
+		});
+		result.addEventListener('click', function (e) {
+			var pick = e.target.closest('[data-pa-pick]');
+			if (!pick || !pa.choices) { return; }
+			var d = pa.choices.filter(function (x) { return String(x.id) === pick.getAttribute('data-pa-pick'); })[0];
+			result.innerHTML = '';
+			if (d) { putAwayOne(d); }
+		});
+	}
+
 	if (M) {
+		$('[data-action="putaway-start"]').addEventListener('click', startPutAway);
 		$('[data-action="scan-start"]').addEventListener('click', function () { startCamera('lookup'); });
 		$('[data-action="scan-stop"]').addEventListener('click', stopCamera);
 		$('[data-action="open-scan"]').addEventListener('click', function () { startCamera('lookup'); });
 		$('[data-scan-form]').addEventListener('submit', function (e) {
 			e.preventDefault();
 			var inp = e.target.code;
-			lookup(inp.value);
+			if (paEl && !paEl.hidden) { putAwayScan(inp.value); } else { lookup(inp.value); }
 			inp.select();
 		});
 		document.addEventListener('visibilitychange', function () { if (document.hidden) { stopCamera(); } });
@@ -708,9 +820,9 @@
 		$('[data-status-select]', form).innerHTML = Object.keys(C.statuses).map(function (k) { return '<option value="' + esc(k) + '">' + esc(C.statuses[k].label) + '</option>'; }).join('');
 		$('[data-cond-pick]', form).innerHTML = Object.keys(C.conditions).map(function (k) {
 			var c = C.conditions[k];
-			var col = { 'new': '#7DD87C', new_open: '#E8FF3A', used_c: '#FFB84D', used_d: '#FF6673', core: '#FF6673' }[k] || '#C5CBD5';
-			return '<label style="--c:' + col + '" title="' + esc(c.label + ' – ' + c.desc) + '">' +
-				'<input type="radio" name="condition" value="' + esc(k) + '">' + esc(c.short) + '</label>';
+			var col = { 'new': '#7DD87C', used: '#C5CBD5', bad: '#FFB84D', unusable: '#FF6673' }[k] || '#C5CBD5';
+			return '<label style="--c:' + col + '" title="' + esc(c.desc) + '">' +
+				'<input type="radio" name="condition" value="' + esc(k) + '">' + esc(c.label) + '</label>';
 		}).join('');
 		$('[data-flag-pick]', form).innerHTML = Object.keys(C.flags).map(function (k) {
 			return '<label><input type="checkbox" name="condition_flags" value="' + esc(k) + '">' + esc(C.flags[k]) + '</label>';
@@ -723,6 +835,8 @@
 		var c = form.querySelector('[name="condition"]:checked');
 		var grp = c && C.conditions[c.value] ? C.conditions[c.value].group : 'used';
 		form.classList.toggle('is-new', grp === 'new');
+		var cd = $('[data-cond-desc]', form);
+		cd.innerHTML = c && C.conditions[c.value] ? '<b>' + esc(C.conditions[c.value].label) + '</b> – ' + esc(C.conditions[c.value].desc) : '';
 	}
 	function syncBox() {
 		var sel = $('[data-cat-select]', form);
@@ -758,7 +872,12 @@
 		$('[data-photos]', form).innerHTML = '';
 		$('[data-dup]', form).hidden = true;
 		form.fitment.value = C.fitment || '';
-		setField('condition', keepCond || 'used_b');
+		form.removed_from.value = C.removedFrom || '';
+		form.status.value = 'not_boxed';
+		form.name.dataset.auto = '';
+		form.dataset.catManual = '';
+		var ih = $('[data-ident]', form); ih.hidden = true; ih.textContent = '';
+		setField('condition', keepCond || 'used');
 		if (keepCat) { form.category_id.value = keepCat; }
 		syncPicks();
 		syncBox();
@@ -778,6 +897,7 @@
 		setField('public', d['public']);
 		setField('fitment', (d.fitment || []).join(', '));
 		form.description.value = d.description ? d.description.replace(/<\/p>\s*<p>/g, '\n\n').replace(/<br\s*\/?>/g, '\n').replace(/<[^>]+>/g, '').trim() : '';
+		form.dataset.catManual = '1';
 		var flagLabels = d.condition_flags || [];
 		$$('[name="condition_flags"]', form).forEach(function (el) { el.checked = flagLabels.indexOf(C.flags[el.value]) !== -1; });
 		form.category_id.value = d.category ? d.category.id : '';
@@ -831,6 +951,34 @@
 		});
 	}
 
+	var identTimer, identSeq = 0;
+	function identify() {
+		clearTimeout(identTimer);
+		identTimer = setTimeout(function () {
+			var v = form.part_number.value.trim();
+			var hint = $('[data-ident]', form);
+			if (form.part_id.value || v.replace(/[^a-z0-9]/gi, '').length < 5) { hint.hidden = true; return; }
+			var seq = ++identSeq;
+			api('identify', { params: { number: v } }).then(function (r) {
+				if (seq !== identSeq) { return; }
+				if (!r.found) { hint.hidden = true; return; }
+				var nameEl = form.name;
+				if (r.name && (!nameEl.value.trim() || nameEl.dataset.auto === '1')) {
+					nameEl.value = r.name;
+					nameEl.dataset.auto = '1';
+				}
+				if (r.category_id && form.dataset.catManual !== '1') {
+					form.category_id.value = r.category_id;
+					syncBox();
+				}
+				var from = (T.identFrom && T.identFrom[r.source]) || '';
+				hint.className = 'ident' + (r.source === 'rule' || r.source === 'similar' ? ' guess' : '');
+				hint.innerHTML = '✓ ' + (r.name ? '<b>' + esc(r.name) + '</b> ' : '') + (r.box ? esc(T.goesIn) + ' <b class="boxcode">' + esc(r.box) + '</b> ' : '') + '<span>(' + esc(from) + ')</span>';
+				hint.hidden = false;
+			}).catch(function () { hint.hidden = true; });
+		}, 300);
+	}
+
 	var dupTimer;
 	function checkDup() {
 		clearTimeout(dupTimer);
@@ -858,6 +1006,9 @@
 		});
 		form.box_override.addEventListener('input', syncBox);
 		form.part_number.addEventListener('input', checkDup);
+		form.part_number.addEventListener('input', identify);
+		form.name.addEventListener('input', function () { form.name.dataset.auto = ''; });
+		form.category_id.addEventListener('change', function () { form.dataset.catManual = '1'; });
 		form.addEventListener('click', function (e) {
 			var d = e.target.closest('[data-edit-dup]');
 			if (d) { e.preventDefault(); editPart(d.getAttribute('data-edit-dup')); return; }
@@ -893,7 +1044,8 @@
 				'box_override', 'bin', 'purchase_price', 'purchase_date', 'source', 'value', 'sale_price', 'weight', 'description', 'private_notes', 'note'].forEach(function (k) {
 				body[k] = fd.get(k) == null ? '' : String(fd.get(k)).trim();
 			});
-			body.condition = fd.get('condition') || 'used_b';
+			body.condition = fd.get('condition') || 'used';
+			if (body.condition === 'new' && !form.part_id.value) { body.removed_from = ''; body.mileage = ''; }
 			body.condition_flags = fd.getAll('condition_flags');
 			if (!body.condition_flags.length) { body.condition_flags = ''; }
 			body['public'] = form['public'].checked ? 1 : 0;

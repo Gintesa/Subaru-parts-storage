@@ -14,62 +14,77 @@ const SPS_CAP      = 'manage_sps_parts';
 const SPS_EDIT_CAP = 'edit_sps_parts';
 
 /**
- * Condition grades. "group" is new|used|core and drives filters and stats.
+ * Condition grades. Kept deliberately short so they read clearly on a phone.
+ * "group" equals the key (kept for backwards compatibility with older code).
  *
  * @return array<string,array{label:string,short:string,group:string,color:string,desc:string}>
  */
 function sps_conditions() {
 	return array(
 		'new'      => array(
-			'label' => __( 'New – sealed / OEM packaging', 'subaru-parts-inventory' ),
+			'label' => __( 'New', 'subaru-parts-inventory' ),
 			'short' => 'NEW',
 			'group' => 'new',
 			'color' => '#18794e',
-			'desc'  => __( 'Never fitted, in original packaging.', 'subaru-parts-inventory' ),
+			'desc'  => __( 'Never fitted – sealed or open box.', 'subaru-parts-inventory' ),
 		),
-		'new_open' => array(
-			'label' => __( 'New – open box / never fitted', 'subaru-parts-inventory' ),
-			'short' => 'NEW-OB',
-			'group' => 'new',
-			'color' => '#2f9e63',
-			'desc'  => __( 'Unused, packaging opened or missing.', 'subaru-parts-inventory' ),
-		),
-		'used_a'   => array(
-			'label' => __( 'Used – A: Excellent', 'subaru-parts-inventory' ),
-			'short' => 'USED-A',
+		'used'     => array(
+			'label' => __( 'Used', 'subaru-parts-inventory' ),
+			'short' => 'USED',
 			'group' => 'used',
 			'color' => '#1f5fa8',
-			'desc'  => __( 'Like new, minimal signs of use, fully functional.', 'subaru-parts-inventory' ),
+			'desc'  => __( 'Taken off a car, works fine, normal wear.', 'subaru-parts-inventory' ),
 		),
-		'used_b'   => array(
-			'label' => __( 'Used – B: Good', 'subaru-parts-inventory' ),
-			'short' => 'USED-B',
-			'group' => 'used',
-			'color' => '#3b7dc4',
-			'desc'  => __( 'Normal wear, cosmetic marks, fully functional.', 'subaru-parts-inventory' ),
-		),
-		'used_c'   => array(
-			'label' => __( 'Used – C: Fair', 'subaru-parts-inventory' ),
-			'short' => 'USED-C',
-			'group' => 'used',
+		'bad'      => array(
+			'label' => __( 'Bad', 'subaru-parts-inventory' ),
+			'short' => 'BAD',
+			'group' => 'bad',
 			'color' => '#b7791f',
-			'desc'  => __( 'Heavy wear or visible damage, still usable.', 'subaru-parts-inventory' ),
+			'desc'  => __( 'Damaged or worn – needs repair or cleaning before use.', 'subaru-parts-inventory' ),
 		),
-		'used_d'   => array(
-			'label' => __( 'Used – D: Poor / needs repair', 'subaru-parts-inventory' ),
-			'short' => 'USED-D',
-			'group' => 'used',
-			'color' => '#c05621',
-			'desc'  => __( 'Needs repair or refurbishment before use.', 'subaru-parts-inventory' ),
-		),
-		'core'     => array(
-			'label' => __( 'Core / for parts only', 'subaru-parts-inventory' ),
-			'short' => 'CORE',
-			'group' => 'core',
+		'unusable' => array(
+			'label' => __( 'Unusable', 'subaru-parts-inventory' ),
+			'short' => 'UNUSABLE',
+			'group' => 'unusable',
 			'color' => '#9b2c2c',
-			'desc'  => __( 'Not usable as-is; for rebuild, core exchange or donor parts.', 'subaru-parts-inventory' ),
+			'desc'  => __( 'Broken – only for parts, core exchange or scrap.', 'subaru-parts-inventory' ),
 		),
 	);
+}
+
+/**
+ * Old (v1.0/1.1) condition keys mapped to the current ones.
+ *
+ * @return array<string,string>
+ */
+function sps_condition_aliases() {
+	return array(
+		'new_open' => 'new',
+		'used_a'   => 'used',
+		'used_b'   => 'used',
+		'used_c'   => 'bad',
+		'used_d'   => 'bad',
+		'core'     => 'unusable',
+		'a'        => 'used',
+		'b'        => 'used',
+		'c'        => 'bad',
+		'd'        => 'bad',
+		'broken'   => 'unusable',
+		'scrap'    => 'unusable',
+		'damaged'  => 'bad',
+	);
+}
+
+/**
+ * Normalise any condition value (current key, old key, label) to a current key.
+ */
+function sps_condition_key( $value, $default = 'used' ) {
+	$v = strtolower( trim( str_replace( array( '-', ' ' ), '_', (string) $value ) ) );
+	if ( array_key_exists( $v, sps_conditions() ) ) {
+		return $v;
+	}
+	$aliases = sps_condition_aliases();
+	return isset( $aliases[ $v ] ) ? $aliases[ $v ] : $default;
 }
 
 /**
@@ -81,6 +96,7 @@ function sps_condition_flags() {
 	return array(
 		'tested_ok'     => __( 'Tested – working', 'subaru-parts-inventory' ),
 		'untested'      => __( 'Untested', 'subaru-parts-inventory' ),
+		'dirty'         => __( 'Dirty – needs cleaning', 'subaru-parts-inventory' ),
 		'cleaned'       => __( 'Cleaned', 'subaru-parts-inventory' ),
 		'refurbished'   => __( 'Refurbished / rebuilt', 'subaru-parts-inventory' ),
 		'scratches'     => __( 'Scratches / scuffs', 'subaru-parts-inventory' ),
@@ -105,7 +121,8 @@ function sps_condition_flags() {
  */
 function sps_statuses() {
 	return array(
-		'in_stock'  => array( 'label' => __( 'In stock', 'subaru-parts-inventory' ), 'public' => true, 'in_stock' => true ),
+		'not_boxed' => array( 'label' => __( 'Not boxed yet', 'subaru-parts-inventory' ), 'public' => true, 'in_stock' => true ),
+		'in_stock'  => array( 'label' => __( 'In stock (boxed)', 'subaru-parts-inventory' ), 'public' => true, 'in_stock' => true ),
 		'listed'    => array( 'label' => __( 'Listed for sale', 'subaru-parts-inventory' ), 'public' => true, 'in_stock' => true ),
 		'reserved'  => array( 'label' => __( 'Reserved', 'subaru-parts-inventory' ), 'public' => true, 'in_stock' => true ),
 		'on_car'    => array( 'label' => __( 'Still on donor car', 'subaru-parts-inventory' ), 'public' => true, 'in_stock' => true ),
@@ -125,6 +142,7 @@ function sps_default_settings() {
 		'sku_prefix'        => 'SP-',
 		'sku_digits'        => 5,
 		'default_fitment'   => '2017 Subaru WRX 2.0L 6MT Limited',
+		'default_removed_from' => 'JF1VA1L62H9817699',
 		'distance_unit'     => 'km',
 		'currency'          => '€',
 		'label_template'    => 'brother_62x29',
@@ -217,7 +235,7 @@ function sps_sanitize_field( $type, $value ) {
 		case 'bool':
 			return empty( $value ) || 'no' === $value || '0' === $value ? 0 : 1;
 		case 'condition':
-			return array_key_exists( (string) $value, sps_conditions() ) ? (string) $value : 'used_b';
+			return sps_condition_key( $value );
 		case 'status':
 			return array_key_exists( (string) $value, sps_statuses() ) ? (string) $value : 'in_stock';
 		case 'flags':
@@ -274,10 +292,10 @@ function sps_refresh_derived_meta( $post_id ) {
 		update_post_meta( $post_id, '_sps_quantity', 1 );
 	}
 	if ( '' === get_post_meta( $post_id, '_sps_status', true ) ) {
-		update_post_meta( $post_id, '_sps_status', 'in_stock' );
+		update_post_meta( $post_id, '_sps_status', 'not_boxed' );
 	}
 	if ( '' === get_post_meta( $post_id, '_sps_condition', true ) ) {
-		update_post_meta( $post_id, '_sps_condition', 'used_b' );
+		update_post_meta( $post_id, '_sps_condition', 'used' );
 	}
 	if ( '' === get_post_meta( $post_id, '_sps_public', true ) ) {
 		update_post_meta( $post_id, '_sps_public', (int) sps_setting( 'public_default' ) );
@@ -286,6 +304,9 @@ function sps_refresh_derived_meta( $post_id ) {
 	$status   = sps_meta( $post_id, 'status', 'in_stock' );
 	$visible  = (int) sps_meta( $post_id, 'public', 0 ) && ! empty( $statuses[ $status ]['public'] );
 	update_post_meta( $post_id, '_sps_visible', $visible ? 1 : 0 );
+	if ( class_exists( 'SPS_Catalog' ) ) {
+		SPS_Catalog::remember( $post_id );
+	}
 	sps_flush_caches();
 }
 
@@ -514,7 +535,7 @@ function sps_part_data( $post_id, $context = 'public' ) {
 	$statuses   = sps_statuses();
 	$flags_all  = sps_condition_flags();
 	$category   = sps_part_category( $post_id );
-	$condition  = sps_meta( $post_id, 'condition', 'used_b' );
+	$condition  = sps_meta( $post_id, 'condition', 'used' );
 	$status     = sps_meta( $post_id, 'status', 'in_stock' );
 	$flags      = (array) sps_meta( $post_id, 'condition_flags', array() );
 	$fitment    = wp_get_post_terms( $post_id, SPS_TAX_FIT, array( 'fields' => 'names' ) );
@@ -747,7 +768,7 @@ function sps_public_counts() {
 	$c   = sps_conditions();
 	foreach ( $ids as $id ) {
 		$out['all']++;
-		$g = $c[ sps_meta( $id, 'condition', 'used_b' ) ]['group'] ?? 'used';
+		$g = $c[ sps_meta( $id, 'condition', 'used' ) ]['group'] ?? 'used';
 		$out[ 'new' === $g ? 'new' : 'used' ]++;
 	}
 	set_transient( 'sps_public_counts', $out, 10 * MINUTE_IN_SECONDS );
@@ -797,4 +818,40 @@ function sps_category_tree() {
 	};
 	$walk( 0, 0 );
 	return $out;
+}
+
+/**
+ * Data upgrades between plugin versions.
+ *
+ * @param string $from Previously installed version ('' on first install).
+ */
+function sps_run_upgrades( $from ) {
+	global $wpdb;
+	if ( '' === $from || version_compare( $from, '1.2.0', '>=' ) ) {
+		return;
+	}
+	// 1.2.0: seven condition grades → New / Used / Bad / Unusable.
+	foreach ( array( 'new_open', 'used_a', 'used_b', 'used_c', 'used_d', 'core' ) as $old ) {
+		$wpdb->update( $wpdb->postmeta, array( 'meta_value' => sps_condition_key( $old ) ), array( 'meta_key' => '_sps_condition', 'meta_value' => $old ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.SlowDBQuery
+	}
+	$rows = $wpdb->get_results( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_sps_inspections'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	foreach ( $rows as $row ) {
+		$log = get_post_meta( $row->post_id, '_sps_inspections', true );
+		if ( ! is_array( $log ) ) {
+			continue;
+		}
+		foreach ( $log as &$entry ) {
+			if ( ! empty( $entry['condition'] ) ) {
+				$entry['condition'] = sps_condition_key( $entry['condition'] );
+			}
+		}
+		unset( $entry );
+		update_post_meta( $row->post_id, '_sps_inspections', $log );
+	}
+	// Remember names of existing parts in the library.
+	$ids = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status NOT IN ('trash','auto-draft')", SPS_PT ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	foreach ( $ids as $id ) {
+		SPS_Catalog::remember( (int) $id );
+	}
+	sps_flush_caches();
 }

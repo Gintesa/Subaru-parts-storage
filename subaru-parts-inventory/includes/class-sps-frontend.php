@@ -151,8 +151,6 @@ class SPS_Frontend {
 				</select>
 				<select name="condition" aria-label="<?php esc_attr_e( 'Condition', 'subaru-parts-inventory' ); ?>">
 					<option value=""><?php esc_html_e( 'New & used', 'subaru-parts-inventory' ); ?></option>
-					<option value="new" <?php selected( $state['condition'], 'new' ); ?>><?php esc_html_e( 'New only', 'subaru-parts-inventory' ); ?></option>
-					<option value="used" <?php selected( $state['condition'], 'used' ); ?>><?php esc_html_e( 'Used only', 'subaru-parts-inventory' ); ?></option>
 					<?php foreach ( sps_conditions() as $key => $c ) : ?>
 						<option value="<?php echo esc_attr( $key ); ?>" <?php selected( $state['condition'], $key ); ?>><?php echo esc_html( $c['label'] ); ?></option>
 					<?php endforeach; ?>
@@ -264,7 +262,7 @@ class SPS_Frontend {
 		if ( isset( $d['quantity'] ) ) {
 			$rows[ __( 'Quantity', 'subaru-parts-inventory' ) ] = (int) $d['quantity'];
 		}
-		if ( '' !== (string) $d['mileage'] && 'used' === $d['condition_group'] ) {
+		if ( '' !== (string) $d['mileage'] && 'new' !== $d['condition_group'] ) {
 			$rows[ __( 'Mileage', 'subaru-parts-inventory' ) ] = esc_html( number_format_i18n( (int) $d['mileage'] ) . ' ' . sps_setting( 'distance_unit' ) );
 		}
 		if ( isset( $d['sale_price'] ) && '' !== $d['sale_price'] ) {
